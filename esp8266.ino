@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Servo.h>
+#include <Stepper.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
@@ -15,53 +15,61 @@
 #define SDA_PIN 12
 #define SCL_PIN 14
 
-// Configurações do Servo Digital
-#define SERVO_PIN 16  // D0
+// Configurações do Motor de Passo 28BYJ-48 com driver ULN2003
+#define IN1_PIN 5
+#define IN2_PIN 4
+#define IN3_PIN 0
+#define IN4_PIN 2
+
+// Configurações do motor
+const int STEPS_PER_MOTOR_REVOLUTION = 2048;
+const int STEPS_PER_AUGER_ROTATION = STEPS_PER_MOTOR_REVOLUTION;
+const int STEPS_PER_CHUNK = 64; // Dividir em pedaços menores para evitar timeout
 
 // Configurações WiFi
-const char* ssid = "SEU_WIFI";
-const char* password = "SUA_SENHA";
+const char* ssid = "INTERNET";
+const char* password = "senha";
 
 // Objetos
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Servo servoMotor;
+Stepper stepperMotor(STEPS_PER_MOTOR_REVOLUTION, IN1_PIN, IN3_PIN, IN2_PIN, IN4_PIN);
 ESP8266WebServer server(80);
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", -3 * 3600, 60000); // UTC-3 (Brasil)
-
-// Configurações da Rosca Sem Fim
-const int SERVO_STOP = 90;      // Posição de parada (servo digital)
-const int SERVO_FORWARD = 120;  // Rotação para frente (ajustar conforme servo)
-const int SERVO_BACKWARD = 60;  // Rotação para trás (limpeza/emergência)
-const int ROTATION_DELAY = 100; // Delay entre movimentos (ms)
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -3 * 3600, 60000);
 
 // Variáveis globais
 struct FeedingTime {
   int hour;
   int minute;
-  int rotations;  // número de rotações da rosca
+  int rotations;
   bool active;
 };
 
 FeedingTime feedingTimes[4] = {
-  {8, 0, 3, true},   // 8h00 - 3 rotações
-  {12, 0, 3, true},  // 12h00 - 3 rotações  
-  {18, 0, 3, true},  // 18h00 - 3 rotações
-  {22, 0, 2, false}  // 22h00 - 2 rotações (desabilitado)
+  {6, 0, 3, true},
+  {12, 0, 3, true},
+  {20, 30, 3, true},
+  {22, 0, 2, false}
 };
 
 int totalFeedings = 0;
-int totalRotations = 0;
-int lastFeedHour = -1;
+long totalRotations = 0;
 bool manualFeedRequested = false;
 int manualRotations = 3;
 unsigned long lastDisplayUpdate = 0;
-int displayMode = 0; // 0=status, 1=horários, 2=wifi, 3=estatísticas
-bool servoAttached = false;
-int currentServoPosition = SERVO_STOP;
+int displayMode = 0;
+bool isStepperMoving = false;
+
+// Variáveis para controle não-bloqueante do motor
+int pendingRotations = 0;
+int currentRotation = 0;
+int stepsRemaining = 0;
+bool feedingInProgress = false;
+unsigned long lastStepTime = 0;
+const unsigned long STEP_DELAY = 3; // Delay entre passos em ms
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(74880);
   
   // Inicializa I2C e Display
   Wire.begin(SDA_PIN, SCL_PIN);
@@ -69,51 +77,154 @@ void setup() {
     Serial.println("Falha no display OLED");
     for(;;);
   }
-  
-  // Inicializa servo motor
-  servoMotor.attach(SERVO_PIN);
-  servoMotor.write(SERVO_STOP);
-  servoAttached = true;
+
+  // Inicializa motor de passo
+  stepperMotor.setSpeed(12);
   delay(1000);
-  
+
   // Tela inicial
   displayStartup();
-  
+
   // Conecta WiFi
   connectWiFi();
-  
+
   // Inicializa NTP
   timeClient.begin();
-  
+
   // Configura servidor web
   setupWebServer();
-  
+
   displayReady();
 }
 
 void loop() {
+  // Processa requisições web PRIMEIRO
+  server.handleClient();
+  yield(); // Permite que o ESP8266 processe tarefas internas
+  
   // Atualiza tempo
   timeClient.update();
   
-  // Verifica horários de alimentação
+  // Processa motor de passo de forma não-bloqueante
+  processStepperMotor();
+  yield();
+
+  // Verifica horários de alimentação programados
   checkFeedingTimes();
-  
-  // Processa alimentação manual
-  if (manualFeedRequested) {
-    feedPet(manualRotations);
+  yield();
+
+  // Processa alimentação manual solicitada
+  if (manualFeedRequested && !feedingInProgress) {
+    startFeeding(manualRotations);
     manualFeedRequested = false;
   }
-  
-  // Atualiza display a cada 2 segundos
+
+  // Atualiza display
   if (millis() - lastDisplayUpdate > 2000) {
     updateDisplay();
     lastDisplayUpdate = millis();
   }
+
+  delay(10); // Delay reduzido para melhor responsividade
+}
+
+void processStepperMotor() {
+  if (!feedingInProgress) return;
   
-  // Processa requisições web
-  server.handleClient();
+  if (stepsRemaining > 0) {
+    if (millis() - lastStepTime >= STEP_DELAY) {
+      // Executa apenas alguns passos por vez
+      int stepsToTake = min(stepsRemaining, STEPS_PER_CHUNK);
+      stepperMotor.step(stepsToTake);
+      stepsRemaining -= stepsToTake;
+      lastStepTime = millis();
+      
+      // Processa requisições web durante o movimento
+      server.handleClient();
+      yield();
+    }
+  } else {
+    // Rotação atual concluída
+    currentRotation++;
+    totalRotations++;
+    
+    if (currentRotation >= pendingRotations) {
+      // Todas as rotações concluídas
+      finishFeeding();
+    } else {
+      // Inicia próxima rotação
+      stepsRemaining = STEPS_PER_AUGER_ROTATION;
+      delay(200); // Pequena pausa entre rotações
+    }
+  }
+}
+
+void startFeeding(int rotations) {
+  if (feedingInProgress) return; // Evita sobreposição
   
-  delay(100);
+  Serial.print("Iniciando alimentação - ");
+  Serial.print(rotations);
+  Serial.println(" rotações");
+  
+  pendingRotations = rotations;
+  currentRotation = 0;
+  stepsRemaining = STEPS_PER_AUGER_ROTATION;
+  feedingInProgress = true;
+  isStepperMoving = true;
+  
+  // Atualiza display
+  updateFeedingDisplay();
+}
+
+void finishFeeding() {
+  feedingInProgress = false;
+  isStepperMoving = false;
+  
+  Serial.println("Alimentação concluída!");
+  
+  // Mostra confirmação no display
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(0,0);
+  display.println("CONCLUIDO!");
+  display.setTextSize(1);
+  display.println("");
+  display.print("Dispensado: ");
+  display.print(pendingRotations);
+  display.println(" porcoes");
+  display.println("Pet alimentado!");
+  display.display();
+  
+  delay(2000);
+  pendingRotations = 0;
+}
+
+void updateFeedingDisplay() {
+  if (!feedingInProgress) return;
+  
+  display.clearDisplay();
+  display.setTextSize(1.5);
+  display.setCursor(0,0);
+  display.println("ALIMENTANDO");
+  display.setTextSize(1);
+  display.println("");
+  display.print("Rotacao: ");
+  display.print(currentRotation + 1);
+  display.print("/");
+  display.println(pendingRotations);
+  
+  // Barra de progresso
+  int totalProgress = ((currentRotation * STEPS_PER_AUGER_ROTATION) + 
+                      (STEPS_PER_AUGER_ROTATION - stepsRemaining));
+  int maxProgress = pendingRotations * STEPS_PER_AUGER_ROTATION;
+  int progressBar = (totalProgress * 128) / maxProgress;
+  
+  display.drawRect(0, 35, 128, 8, SSD1306_WHITE);
+  display.fillRect(0, 35, progressBar, 8, SSD1306_WHITE);
+  
+  display.setCursor(0, 50);
+  display.print("Rosca: Girando");
+  display.display();
 }
 
 void displayStartup() {
@@ -122,11 +233,11 @@ void displayStartup() {
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0,0);
   display.println("ALIMENTADOR");
-  display.println("PET v3.0");
+  display.println("PET v3.2");
   display.setTextSize(1);
   display.println("");
   display.println("Rosca Sem Fim");
-  display.println("Servo Digital");
+  display.println("Motor de Passo");
   display.println("Inicializando...");
   display.display();
   delay(2000);
@@ -138,36 +249,34 @@ void connectWiFi() {
   display.setCursor(0,0);
   display.println("Conectando WiFi...");
   display.display();
-  
+
   WiFi.begin(ssid, password);
-  
+
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
     attempts++;
-    
+
     display.clearDisplay();
     display.setCursor(0,0);
     display.println("Conectando WiFi...");
     display.print("Tentativa: ");
     display.print(attempts);
     display.println("/20");
-    
-    // Barra de progresso animada
+
     int progress = (attempts * 128) / 20;
     display.drawRect(0, 25, 128, 8, SSD1306_WHITE);
     display.fillRect(0, 25, progress, 8, SSD1306_WHITE);
-    
-    // Indicador de rosca girando
+
     display.setCursor(50, 40);
     display.print("Rosca: ");
     char spinner[] = {'|', '/', '-', '\\'};
     display.print(spinner[attempts % 4]);
-    
+
     display.display();
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi conectado!");
     Serial.print("IP: ");
@@ -183,9 +292,9 @@ void displayReady() {
   display.setCursor(0,0);
   display.println("SISTEMA PRONTO!");
   display.println("");
-  display.println("Servo Digital: OK");
+  display.println("Motor de Passo: OK");
   display.println("Rosca: Parada");
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     display.println("WiFi: Conectado");
     display.print("IP: ");
@@ -193,153 +302,64 @@ void displayReady() {
   } else {
     display.println("WiFi: Desconectado");
   }
-  
+
   display.display();
   delay(3000);
 }
 
 void checkFeedingTimes() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  
+  if (WiFi.status() != WL_CONNECTED || feedingInProgress) return;
+
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
-  
-  // Evita alimentação duplicada na mesma hora
-  if (currentHour == lastFeedHour) return;
-  
+
+  static int lastFedIndex = -1;
+  static unsigned long lastFedMillis = 0;
+
   for (int i = 0; i < 4; i++) {
-    if (feedingTimes[i].active && 
-        feedingTimes[i].hour == currentHour && 
+    if (feedingTimes[i].active &&
+        feedingTimes[i].hour == currentHour &&
         feedingTimes[i].minute == currentMinute) {
-      
-      feedPet(feedingTimes[i].rotations);
-      lastFeedHour = currentHour;
-      totalFeedings++;
-      break;
+
+      if (lastFedIndex != i || (millis() - lastFedMillis > 60 * 1000)) {
+         startFeeding(feedingTimes[i].rotations);
+         lastFedIndex = i;
+         lastFedMillis = millis();
+         totalFeedings++;
+         break;
+      }
     }
   }
-}
-
-void feedPet(int rotations) {
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0,0);
-  display.println("ALIMENTANDO");
-  display.setTextSize(1);
-  display.println("");
-  display.print("Rotacoes: ");
-  display.println(rotations);
-  display.println("Rosca girando...");
-  display.display();
-  
-  // Garante que servo está conectado
-  if (!servoAttached) {
-    servoMotor.attach(SERVO_PIN);
-    servoAttached = true;
-    delay(100);
-  }
-  
-  Serial.print("Iniciando alimentação - ");
-  Serial.print(rotations);
-  Serial.println(" rotações");
-  
-  // Executa as rotações
-  for (int rot = 1; rot <= rotations; rot++) {
-    // Atualiza display com progresso
-    display.clearDisplay();
-    display.setTextSize(2);
-    display.setCursor(0,0);
-    display.println("ALIMENTANDO");
-    display.setTextSize(1);
-    display.println("");
-    display.print("Rotacao: ");
-    display.print(rot);
-    display.print("/");
-    display.println(rotations);
-    
-    // Barra de progresso
-    int progress = (rot * 128) / rotations;
-    display.drawRect(0, 35, 128, 8, SSD1306_WHITE);
-    display.fillRect(0, 35, progress, 8, SSD1306_WHITE);
-    
-    // Indicador visual da rosca
-    display.setCursor(0, 50);
-    display.print("Rosca: ");
-    char spinner[] = {'|', '/', '-', '\\'};
-    for (int i = 0; i < 8; i++) {
-      display.print(spinner[i % 4]);
-    }
-    
-    display.display();
-    
-    // Gira a rosca (uma rotação completa)
-    executeRotation();
-    
-    totalRotations++;
-    delay(500); // Pausa entre rotações
-  }
-  
-  // Para o servo
-  servoMotor.write(SERVO_STOP);
-  currentServoPosition = SERVO_STOP;
-  delay(500);
-  
-  // Mostra confirmação
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(0,0);
-  display.println("CONCLUIDO!");
-  display.setTextSize(1);
-  display.println("");
-  display.print("Dispensado: ");
-  display.print(rotations);
-  display.println(" porcoes");
-  display.println("Pet alimentado!");
-  display.display();
-  
-  Serial.println("Alimentação concluída!");
-  delay(2000);
-}
-
-void executeRotation() {
-  // Uma rotação completa da rosca
-  // Ajustar tempo conforme a velocidade desejada
-  
-  servoMotor.write(SERVO_FORWARD);
-  currentServoPosition = SERVO_FORWARD;
-  
-  // Tempo para uma rotação completa (ajustar conforme necessário)
-  delay(1000); // 1 segundo por rotação
-  
-  servoMotor.write(SERVO_STOP);
-  currentServoPosition = SERVO_STOP;
-  delay(200); // Pausa para estabilizar
 }
 
 void updateDisplay() {
+  // Se estiver alimentando, mostra progresso
+  if (feedingInProgress) {
+    updateFeedingDisplay();
+    return;
+  }
+  
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0,0);
-  
+
   switch(displayMode) {
-    case 0: // Status
+    case 0:
       displayStatus();
       break;
-    case 1: // Horários
+    case 1:
       displaySchedule();
       break;
-    case 2: // WiFi Info
+    case 2:
       displayWiFiInfo();
       break;
-    case 3: // Estatísticas
+    case 3:
       displayStats();
       break;
   }
-  
+
   display.display();
-  
-  // Alterna modo a cada 6 segundos
+
   static unsigned long lastModeChange = 0;
   if (millis() - lastModeChange > 6000) {
     displayMode = (displayMode + 1) % 4;
@@ -349,30 +369,27 @@ void updateDisplay() {
 
 void displayStatus() {
   display.println("=== STATUS ===");
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     display.print("Hora: ");
     display.println(timeClient.getFormattedTime());
   } else {
     display.println("Hora: --:--:--");
   }
-  
+
   display.print("Alimentacoes: ");
   display.println(totalFeedings);
-  
-  display.print("Servo: ");
-  if (currentServoPosition == SERVO_STOP) {
-    display.println("Parado");
-  } else if (currentServoPosition == SERVO_FORWARD) {
+
+  display.print("Motor: ");
+  if (feedingInProgress) {
     display.println("Girando");
   } else {
-    display.println("Ativo");
+    display.println("Parado");
   }
-  
+
   display.print("WiFi: ");
   display.println(WiFi.status() == WL_CONNECTED ? "OK" : "OFF");
-  
-  // Próxima alimentação
+
   if (WiFi.status() == WL_CONNECTED) {
     int nextHour = getNextFeedingHour();
     if (nextHour != -1) {
@@ -385,9 +402,9 @@ void displayStatus() {
 
 void displaySchedule() {
   display.println("=== HORARIOS ===");
-  display.println("Alimentacao automatica:");
+  display.println("Alimentação aut.:");
   display.println("");
-  
+
   for (int i = 0; i < 4; i++) {
     if (feedingTimes[i].active) {
       display.print(feedingTimes[i].hour);
@@ -403,7 +420,7 @@ void displaySchedule() {
 
 void displayWiFiInfo() {
   display.println("=== CONEXAO ===");
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     display.print("SSID: ");
     display.println(WiFi.SSID());
@@ -412,15 +429,14 @@ void displayWiFiInfo() {
     display.print("Sinal: ");
     display.print(WiFi.RSSI());
     display.println(" dBm");
-    
-    // Barra de sinal
+
     int signalBars = map(WiFi.RSSI(), -100, -50, 0, 4);
     display.print("Qualidade: ");
     for (int i = 0; i < 4; i++) {
       if (i < signalBars) {
         display.print("█");
       } else {
-        display.print("░");
+        display.print(" ");
       }
     }
   } else {
@@ -441,68 +457,110 @@ void displayStats() {
   display.print("Memoria livre: ");
   display.print(ESP.getFreeHeap());
   display.println(" bytes");
-  
+
   if (totalFeedings > 0) {
     display.print("Media rot/alim: ");
-    display.println(totalRotations / totalFeedings);
+    display.println((float)totalRotations / totalFeedings);
   }
 }
 
 int getNextFeedingHour() {
   int currentHour = timeClient.getHours();
-  
+  int currentMinute = timeClient.getMinutes();
+
   for (int i = 0; i < 4; i++) {
-    if (feedingTimes[i].active && feedingTimes[i].hour > currentHour) {
-      return feedingTimes[i].hour;
+    if (feedingTimes[i].active) {
+        if (feedingTimes[i].hour > currentHour || 
+           (feedingTimes[i].hour == currentHour && feedingTimes[i].minute > currentMinute)) {
+            return feedingTimes[i].hour;
+        }
     }
   }
-  
-  // Se não encontrou hoje, retorna o primeiro de amanhã
+
   for (int i = 0; i < 4; i++) {
     if (feedingTimes[i].active) {
       return feedingTimes[i].hour;
     }
   }
-  
+
   return -1;
 }
 
 void setupWebServer() {
   server.on("/", handleRoot);
   server.on("/feed", handleFeed);
-  server.on("/feed1", []() { manualRotations = 1; manualFeedRequested = true; server.send(200, "text/plain", "Alimentacao: 1 rotacao"); });
-  server.on("/feed3", []() { manualRotations = 3; manualFeedRequested = true; server.send(200, "text/plain", "Alimentacao: 3 rotacoes"); });
-  server.on("/feed5", []() { manualRotations = 5; manualFeedRequested = true; server.send(200, "text/plain", "Alimentacao: 5 rotacoes"); });
+  server.on("/feed1", []() { 
+    if (!feedingInProgress) {
+      manualRotations = 1; 
+      manualFeedRequested = true; 
+      server.send(200, "text/plain", "Alimentacao agendada: 1 rotacao");
+    } else {
+      server.send(423, "text/plain", "Motor ocupado, tente novamente");
+    }
+  });
+  server.on("/feed3", []() { 
+    if (!feedingInProgress) {
+      manualRotations = 3; 
+      manualFeedRequested = true; 
+      server.send(200, "text/plain", "Alimentacao agendada: 3 rotacoes");
+    } else {
+      server.send(423, "text/plain", "Motor ocupado, tente novamente");
+    }
+  });
+  server.on("/feed5", []() { 
+    if (!feedingInProgress) {
+      manualRotations = 5; 
+      manualFeedRequested = true; 
+      server.send(200, "text/plain", "Alimentacao agendada: 5 rotacoes");
+    } else {
+      server.send(423, "text/plain", "Motor ocupado, tente novamente");
+    }
+  });
   server.on("/status", handleStatus);
   server.on("/test", handleTest);
   server.on("/reverse", handleReverse);
+  server.on("/stop", handleStop);
   server.on("/config", handleConfig);
-  
+
   server.begin();
   Serial.println("Servidor web iniciado");
 }
 
 void handleRoot() {
   String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Alimentador Pet - Rosca Sem Fim</title>";
+  html += "<title>Alimentador Pet</title>";
+  html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>body{font-family:Arial;margin:20px;background:#f0f0f0;} .container{max-width:600px;margin:0 auto;background:white;padding:20px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);} .btn{background:#4CAF50;color:white;padding:12px 24px;font-size:14px;margin:5px;border:none;cursor:pointer;border-radius:5px;text-decoration:none;display:inline-block;} .btn:hover{background:#45a049;} .btn-small{background:#2196F3;padding:8px 16px;font-size:12px;} .btn-warn{background:#ff9800;} .stats{background:#f9f9f9;padding:15px;border-radius:5px;margin:10px 0;}</style>";
+  html += "<style>body{font-family:Arial;margin:20px;background:#f0f0f0;} .container{max-width:600px;margin:0 auto;background:white;padding:20px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);} .btn{background:#4CAF50;color:white;padding:12px 24px;font-size:14px;margin:5px;border:none;cursor:pointer;border-radius:5px;text-decoration:none;display:inline-block;} .btn:hover{background:#45a049;} .btn-small{background:#2196F3;padding:8px 16px;font-size:12px;} .btn-warn{background:#ff9800;} .btn-danger{background:#f44336;} .stats{background:#f9f9f9;padding:15px;border-radius:5px;margin:10px 0;} .status-busy{color:#ff9800;font-weight:bold;}</style>";
+  html += "<script>setTimeout(function(){location.reload();}, 5000);</script>"; // Auto-refresh
   html += "</head><body><div class='container'>";
-  html += "<h1>🐕 Alimentador Pet - Rosca Sem Fim</h1>";
+  html += "<h1>🐕 Alimentador Pet</h1>";
   html += "<div class='stats'>";
   html += "<p><strong>⏰ Hora atual:</strong> " + timeClient.getFormattedTime() + "</p>";
   html += "<p><strong>🍽️ Total de alimentações:</strong> " + String(totalFeedings) + "</p>";
   html += "<p><strong>🔄 Total de rotações:</strong> " + String(totalRotations) + "</p>";
-  // Fix: Ensure String literal or cast to String
   html += "<p><strong>📶 WiFi:</strong> " + String(WiFi.status() == WL_CONNECTED ? "Conectado" : "Desconectado") + "</p>";
-  html += "<p><strong>⚙️ Servo:</strong> " + String(currentServoPosition == SERVO_STOP ? "Parado" : "Ativo") + "</p>";
+  html += "<p><strong>⚙️ Motor:</strong> ";
+  if (feedingInProgress) {
+    html += "<span class='status-busy'>Girando (" + String(currentRotation + 1) + "/" + String(pendingRotations) + ")</span>";
+  } else {
+    html += "Parado";
+  }
+  html += "</p>";
   html += "</div>";
   html += "<h2>🎮 Controles:</h2>";
-  html += "<a href='/feed1' class='btn btn-small'>1 Rotação</a>";
-  html += "<a href='/feed3' class='btn'>3 Rotações</a>";
-  html += "<a href='/feed5' class='btn'>5 Rotações</a><br>";
-  html += "<a href='/test' class='btn btn-small'>🔧 Testar</a>";
-  html += "<a href='/reverse' class='btn btn-warn'>↩️ Reverter</a>";
+  
+  if (feedingInProgress) {
+    html += "<p class='status-busy'>⚠️ Motor em funcionamento...</p>";
+    html += "<a href='/stop' class='btn btn-danger'>🛑 Parar</a>";
+  } else {
+    html += "<a href='/feed1' class='btn btn-small'>1 Rotação</a>";
+    html += "<a href='/feed3' class='btn btn-small'>3 Rotações</a>";
+    html += "<a href='/feed5' class='btn btn-small'>5 Rotações</a><br>";
+    html += "<a href='/test' class='btn btn-small'>🔧 Testar</a>";
+    html += "<a href='/reverse' class='btn btn-small'>↩️ Reverter</a>";
+  }
+  
   html += "<a href='/status' class='btn btn-small'>📊 JSON</a>";
   html += "<h2>⏰ Horários Programados:</h2>";
   html += "<ul>";
@@ -515,29 +573,67 @@ void handleRoot() {
     }
   }
   html += "</ul>";
-  html += "<p><small>💡 Acesse de qualquer dispositivo na rede local!</small></p>";
+  html += "<p><small>💡 Página atualiza automaticamente a cada 5 segundos</small></p>";
   html += "</div></body></html>";
 
   server.send(200, "text/html", html);
 }
 
 void handleFeed() {
-  manualRotations = 3;
-  manualFeedRequested = true;
-  server.send(200, "text/plain", "Alimentacao manual: 3 rotacoes");
+  if (!feedingInProgress) {
+    manualRotations = 3;
+    manualFeedRequested = true;
+    server.send(200, "text/plain", "Alimentacao agendada: 3 rotacoes");
+  } else {
+    server.send(423, "text/plain", "Motor ocupado, tente novamente");
+  }
 }
 
 void handleTest() {
-  executeRotation();
-  server.send(200, "text/plain", "Teste concluido: 1 rotacao");
+  if (!feedingInProgress) {
+    manualRotations = 1;
+    manualFeedRequested = true;
+    server.send(200, "text/plain", "Teste agendado: 1 rotacao");
+  } else {
+    server.send(423, "text/plain", "Motor ocupado, tente novamente");
+  }
 }
 
 void handleReverse() {
-  // Rotação reversa para limpeza
-  servoMotor.write(SERVO_BACKWARD);
-  delay(1000);
-  servoMotor.write(SERVO_STOP);
-  server.send(200, "text/plain", "Rotacao reversa concluida");
+  if (!feedingInProgress) {
+    Serial.println("Iniciando rotação reversa...");
+    isStepperMoving = true;
+    
+    // Executa rotação reversa em pedaços pequenos
+    int stepsToReverse = STEPS_PER_AUGER_ROTATION;
+    while (stepsToReverse > 0) {
+      int chunk = min(stepsToReverse, STEPS_PER_CHUNK);
+      stepperMotor.step(-chunk);
+      stepsToReverse -= chunk;
+      server.handleClient();
+      yield();
+      delay(2);
+    }
+    
+    isStepperMoving = false;
+    Serial.println("Rotação reversa concluída.");
+    server.send(200, "text/plain", "Rotacao reversa concluida");
+  } else {
+    server.send(423, "text/plain", "Motor ocupado, tente novamente");
+  }
+}
+
+void handleStop() {
+  if (feedingInProgress) {
+    feedingInProgress = false;
+    isStepperMoving = false;
+    pendingRotations = 0;
+    stepsRemaining = 0;
+    Serial.println("Alimentação interrompida pelo usuário");
+    server.send(200, "text/plain", "Alimentacao interrompida");
+  } else {
+    server.send(200, "text/plain", "Nenhuma alimentacao em andamento");
+  }
 }
 
 void handleStatus() {
@@ -548,13 +644,15 @@ void handleStatus() {
   json += "\"wifi_connected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"uptime\":" + String(millis()/1000) + ",";
   json += "\"free_heap\":" + String(ESP.getFreeHeap()) + ",";
-  json += "\"servo_position\":" + String(currentServoPosition) + ",";
+  json += "\"motor_state\":\"" + String(feedingInProgress ? "feeding" : "stopped") + "\",";
+  json += "\"feeding_progress\":" + String(feedingInProgress ? currentRotation + 1 : 0) + ",";
+  json += "\"total_rotations_pending\":" + String(pendingRotations) + ",";
   json += "\"next_feeding\":" + String(getNextFeedingHour());
   json += "}";
-  
+
   server.send(200, "application/json", json);
 }
 
 void handleConfig() {
-  server.send(200, "text/plain", "Configuracao: Ajustar tempos de rotacao conforme necessario");
+  server.send(200, "text/plain", "Configuracao: Ajuste os horarios de alimentacao e a velocidade do motor no codigo.");
 }
