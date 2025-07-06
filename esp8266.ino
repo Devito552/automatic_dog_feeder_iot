@@ -184,17 +184,16 @@ void finishFeeding() {
   
   // Mostra confirmação no display
   display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(12,0);
+  display.setTextSize(1);
+  display.setCursor(20,2);
   display.print("CONCLUIDO!");
   
-  display.setTextSize(1);
-  display.setCursor(8,22);
+  display.setCursor(8,18);
   display.print("Dispensado: ");
   display.print(pendingRotations);
   display.print(" porcoes");
   
-  display.setCursor(20,35);
+  display.setCursor(20,30);
   display.print("Pet alimentado!");
   
   // Desenha um smile
@@ -213,12 +212,11 @@ void updateFeedingDisplay() {
   if (!feedingInProgress) return;
   
   display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(4,0);
+  display.setTextSize(1);
+  display.setCursor(20,2);
   display.print("ALIMENTANDO");
   
-  display.setTextSize(1);
-  display.setCursor(24,20);
+  display.setCursor(24,18);
   display.print("Rotacao: ");
   display.print(currentRotation + 1);
   display.print("/");
@@ -230,26 +228,23 @@ void updateFeedingDisplay() {
   int maxProgress = pendingRotations * STEPS_PER_AUGER_ROTATION;
   int progressBar = (totalProgress * 120) / maxProgress;
   
-  display.drawRect(4, 35, 120, 10, SSD1306_WHITE);
-  display.fillRect(4, 35, progressBar, 10, SSD1306_WHITE);
+  display.drawRect(4, 32, 120, 10, SSD1306_WHITE);
+  display.fillRect(4, 32, progressBar, 10, SSD1306_WHITE);
   
-  display.setCursor(32,50);
+  display.setCursor(32,48);
   display.print("Dispensando...");
   display.display();
 }
 
 void displayStartup() {
   display.clearDisplay();
-  display.setTextSize(2);
+  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(8,2);
-  display.print("ALIMENTADOR");
-  display.setCursor(24,22);
-  display.print("PET v3.2");
-  display.setTextSize(1);
-  display.setCursor(16,44);
+  display.print("ALIMENTADOR PET v3.2");
+  display.setCursor(16,18);
   display.print("Rosca Sem Fim");
-  display.setCursor(18,54);
+  display.setCursor(18,30);
   display.print("Inicializando...");
   display.display();
   delay(2000);
@@ -258,7 +253,7 @@ void displayStartup() {
 void connectWiFi() {
   display.clearDisplay();
   display.setTextSize(1);
-  display.setCursor(8,0);
+  display.setCursor(8,2);
   display.print("Conectando WiFi...");
   display.display();
 
@@ -271,20 +266,20 @@ void connectWiFi() {
     attempts++;
 
     display.clearDisplay();
-    display.setCursor(8,0);
+    display.setCursor(8,2);
     display.print("Conectando WiFi...");
-    display.setCursor(8,15);
+    display.setCursor(8,18);
     display.print("Tentativa: ");
     display.print(attempts);
     display.print("/20");
 
     // Barra de progresso
     int progress = (attempts * 120) / 20;
-    display.drawRect(4, 30, 120, 10, SSD1306_WHITE);
-    display.fillRect(4, 30, progress, 10, SSD1306_WHITE);
+    display.drawRect(4, 32, 120, 10, SSD1306_WHITE);
+    display.fillRect(4, 32, progress, 10, SSD1306_WHITE);
 
     // Indicador de progresso
-    display.setCursor(32,45);
+    display.setCursor(32,48);
     display.print("Aguarde");
     char spinner[] = {'|', '/', '-', '\\'};
     display.print(" ");
@@ -305,22 +300,22 @@ void connectWiFi() {
 void displayReady() {
   display.clearDisplay();
   display.setTextSize(1);
-  display.setCursor(16,0);
+  display.setCursor(16,2);
   display.print("SISTEMA PRONTO!");
   
-  display.setCursor(12,15);
+  display.setCursor(12,18);
   display.print("Motor: OK");
-  display.setCursor(12,25);
+  display.setCursor(12,28);
   display.print("Rosca: Parada");
 
   if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(12,35);
+    display.setCursor(12,38);
     display.print("WiFi: Conectado");
-    display.setCursor(0,45);
+    display.setCursor(0,48);
     display.print("IP: ");
     display.print(WiFi.localIP());
   } else {
-    display.setCursor(8,35);
+    display.setCursor(8,38);
     display.print("WiFi: Desconectado");
   }
 
@@ -389,23 +384,23 @@ void updateDisplay() {
 }
 
 void displayStatus() {
-  display.setCursor(20,0);
-  display.print("=== STATUS ===");
+  display.setCursor(20,2);
+  display.print("STATUS");
 
   if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(0,12);
+    display.setCursor(0,18);
     display.print("Hora: ");
     display.print(timeClient.getFormattedTime());
   } else {
-    display.setCursor(0,12);
+    display.setCursor(0,18);
     display.print("Hora: --:--:--");
   }
 
-  display.setCursor(0,24);
+  display.setCursor(0,28);
   display.print("Alimentacoes: ");
   display.print(totalFeedings);
 
-  display.setCursor(0,36);
+  display.setCursor(0,38);
   display.print("Motor: ");
   if (feedingInProgress) {
     display.print("Girando");
@@ -413,14 +408,10 @@ void displayStatus() {
     display.print("Parado");
   }
 
-  display.setCursor(0,48);
-  display.print("WiFi: ");
-  display.print(WiFi.status() == WL_CONNECTED ? "Conectado" : "OFF");
-
   if (WiFi.status() == WL_CONNECTED) {
     int nextHour = getNextFeedingHour();
     if (nextHour != -1) {
-      display.setCursor(72,48);
+      display.setCursor(0,48);
       display.print("Prox:");
       display.print(nextHour);
       display.print("h");
@@ -429,12 +420,12 @@ void displayStatus() {
 }
 
 void displaySchedule() {
-  display.setCursor(16,0);
-  display.print("=== HORARIOS ===");
-  display.setCursor(4,12);
-  display.print("Alimentacao automatica:");
+  display.setCursor(16,2);
+  display.print("HORARIOS");
+  display.setCursor(4,18);
+  display.print("Alimentacao:");
 
-  int yPos = 24;
+  int yPos = 28;
   for (int i = 0; i < 4; i++) {
     if (feedingTimes[i].active) {
       display.setCursor(8,yPos);
@@ -452,23 +443,23 @@ void displaySchedule() {
 }
 
 void displayWiFiInfo() {
-  display.setCursor(18,0);
-  display.print("=== CONEXAO ===");
+  display.setCursor(18,2);
+  display.print("CONEXAO");
 
   if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(0,12);
+    display.setCursor(0,18);
     display.print("SSID: ");
     String ssidStr = WiFi.SSID();
-    if (ssidStr.length() > 16) {
-      ssidStr = ssidStr.substring(0, 16);
+    if (ssidStr.length() > 15) {
+      ssidStr = ssidStr.substring(0, 15);
     }
     display.print(ssidStr);
     
-    display.setCursor(0,24);
+    display.setCursor(0,28);
     display.print("IP: ");
     display.print(WiFi.localIP());
     
-    display.setCursor(0,36);
+    display.setCursor(0,38);
     display.print("Sinal: ");
     display.print(WiFi.RSSI());
     display.print(" dBm");
@@ -485,26 +476,26 @@ void displayWiFiInfo() {
       }
     }
   } else {
-    display.setCursor(8,24);
+    display.setCursor(8,28);
     display.print("WiFi: Desconectado");
-    display.setCursor(8,36);
+    display.setCursor(8,38);
     display.print("Tentando reconectar...");
   }
 }
 
 void displayStats() {
-  display.setCursor(8,0);
-  display.print("=== ESTATISTICAS ===");
+  display.setCursor(8,2);
+  display.print("ESTATISTICAS");
   
-  display.setCursor(0,12);
+  display.setCursor(0,18);
   display.print("Total alim: ");
   display.print(totalFeedings);
   
-  display.setCursor(0,24);
+  display.setCursor(0,28);
   display.print("Total rot: ");
   display.print(totalRotations);
   
-  display.setCursor(0,36);
+  display.setCursor(0,38);
   display.print("Uptime: ");
   display.print(millis()/1000/60);
   display.print(" min");
@@ -515,7 +506,7 @@ void displayStats() {
   display.print(" bytes");
 
   if (totalFeedings > 0) {
-    display.setCursor(0,60);
+    display.setCursor(0,58);
     display.print("Media: ");
     display.print((float)totalRotations / totalFeedings, 1);
     display.print(" r/a");
