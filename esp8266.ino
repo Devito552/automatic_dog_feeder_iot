@@ -27,8 +27,8 @@ const int STEPS_PER_AUGER_ROTATION = STEPS_PER_MOTOR_REVOLUTION;
 const int STEPS_PER_CHUNK = 64; // Dividir em pedaços menores para evitar timeout
 
 // Configurações WiFi
-const char* ssid = "INTERNET ";
-const char* password = "";
+const char* ssid = "SEU_WIFI";
+const char* password = "SUA_SENHA";
 
 // Objetos
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
