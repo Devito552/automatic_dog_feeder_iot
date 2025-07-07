@@ -604,10 +604,10 @@ void handleRoot() {
     html += "<a href='/stop' class='btn btn-danger'>🛑 Parar</a>";
   } else {
     html += "<a href='/feed1' class='btn btn-small'>1 Rotação</a>";
-    html += "<a href='/feed3' class='btn'>3 Rotações</a>";
-    html += "<a href='/feed5' class='btn'>5 Rotações</a><br>";
+    html += "<a href='/feed3' class='btn btn-small'>3 Rotações</a>";
+    html += "<a href='/feed5' class='btn btn-small'>5 Rotações</a><br>";
     html += "<a href='/test' class='btn btn-small'>🔧 Testar</a>";
-    html += "<a href='/reverse' class='btn btn-warn'>↩️ Reverter</a>";
+    html += "<a href='/reverse' class='btn btn-small'>↩️ Reverter</a>";
   }
   
   html += "<a href='/status' class='btn btn-small'>📊 JSON</a>";
