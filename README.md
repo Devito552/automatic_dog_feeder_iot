@@ -347,7 +347,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 ## 👨‍💻 Autor
 
-**Devito** - [Seu GitHub](https://github.com/seuusuario)
+**Devito** - [GitHub](https://github.com/Devito552)
 
 ## 🙏 Agradecimentos
 
@@ -362,9 +362,8 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 Se você encontrar problemas ou tiver sugestões:
 
-1. **Issues**: Use as [GitHub Issues](https://github.com/seuusuario/alimentador-pet/issues)
+1. **Issues**: Use as [GitHub Issues](https://github.com/Devito552/automatic_dog_feeder_iot/issues)
 2. **Documentação**: Consulte este README
-3. **Comunidade**: Participe das discussões
 
 ---
 
