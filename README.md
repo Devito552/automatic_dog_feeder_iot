@@ -347,7 +347,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 ## 👨‍💻 Autor
 
-**Devito** - [GitHub](https://github.com/Devito552)
+**Guilherme Devito** - [GitHub](https://github.com/Devito552)
 
 ## 🙏 Agradecimentos
 
