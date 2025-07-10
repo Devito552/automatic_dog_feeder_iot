@@ -74,7 +74,7 @@ SystemConfig config;
 // Variáveis de controle
 int totalFeedings = 0;
 long totalRotations = 0;
-long totalGramsDispensed = 0;  // Nova variável para total em gramas
+double totalGramsDispensed = 0;  // Nova variável para total em gramas
 bool manualFeedRequested = false;
 int manualRotations = 3;
 int manualGrams = 50;  // Nova variável para alimentação manual em gramas
@@ -165,9 +165,6 @@ void setup() {
   // Configura servidor web
   setupWebServer();
   
-  // Configuração de microstepping (informativo)
-  setMicrostepping(1); // Full step
-
   displayReady();
   logEvent("SYSTEM_READY", "Sistema inicializado com sucesso");
 }
@@ -389,9 +386,9 @@ void finishFeeding() {
   disableMotor();
   
   totalFeedings++;
-  // NOVO: Usa o cálculo preciso por passos
+ 
   float gramsDispensed = calculateGramsForSteps(stepsCompleted);
-  totalGramsDispensed += gramsDispensed;
+  totalGramsDispensed += gramsDispensed; // Agora soma corretamente
   
   // Atualiza contador de rotações para estatísticas
   totalRotations += (stepsCompleted + TOTAL_STEPS_PER_REVOLUTION - 1) / TOTAL_STEPS_PER_REVOLUTION;
@@ -844,118 +841,113 @@ void setupWebServer() {
 }
 
 void handleRoot() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Alimentador Pet - Dashboard</title>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; }";
-  html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
-  html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += "h2 { color: #555; margin: 30px 0 15px 0; font-size: 1.5em; font-weight: 500; border-bottom: 2px solid #eee; padding-bottom: 10px; }";
-  html += ".stats { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }";
-  html += ".stats p { margin: 12px 0; font-size: 1.1em; line-height: 1.6; }";
-  html += ".status-busy { color: #ff9800; font-weight: bold; background: #fff3e0; padding: 5px 10px; border-radius: 20px; }";
-  html += ".controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin: 20px 0; }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 20px; margin: 5px; border: none; cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 14px; font-weight: 600; text-align: center; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); }";
-  html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
-  html += ".btn-small { background: linear-gradient(135deg, #2196F3, #1976D2); box-shadow: 0 6px 20px rgba(33,150,243,0.3); padding: 12px 18px; font-size: 13px; }";
-  html += ".btn-small:hover { box-shadow: 0 8px 25px rgba(33,150,243,0.4); background: linear-gradient(135deg, #1976D2, #2196F3); }";
-  html += ".btn-warn { background: linear-gradient(135deg, #ff9800, #f57c00); box-shadow: 0 6px 20px rgba(255,152,0,0.3); }";
-  html += ".btn-warn:hover { box-shadow: 0 8px 25px rgba(255,152,0,0.4); background: linear-gradient(135deg, #f57c00, #ff9800); }";
-  html += ".btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); box-shadow: 0 6px 20px rgba(244,67,54,0.3); }";
-  html += ".btn-danger:hover { box-shadow: 0 8px 25px rgba(244,67,54,0.4); background: linear-gradient(135deg, #d32f2f, #f44336); }";
-  html += ".schedule-list { background: linear-gradient(135deg, #e8f5e8, #c8e6c9); padding: 20px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #4CAF50; }";
-  html += ".schedule-list ul { list-style: none; padding: 0; margin: 0; }";
-  html += ".schedule-list li { background: white; margin: 8px 0; padding: 12px 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }";
-  html += ".footer-info { margin-top: 30px; padding: 20px; background: #f5f5f5; border-radius: 10px; text-align: center; font-size: 0.9em; color: #666; }";
-  html += ".progress-indicator { display: inline-block; background: #4CAF50; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.8em; margin-left: 10px; }";
-  html += "@media (max-width: 768px) { .container { padding: 20px; margin: 10px; border-radius: 15px; } .controls-grid { grid-template-columns: 1fr 1fr; gap: 12px; } h1 { font-size: 2em; } .btn { padding: 12px 16px; font-size: 13px; } }";
-  html += "</style>";
-  html += "<script>setTimeout(function(){location.reload();}, 5000);</script>";
-  html += "</head><body><div class='container'>";
-  html += "<h1>🐕 Alimentador Pet Dashboard</h1>";
-  html += "<div class='stats'>";
-  html += "<p><strong>⏰ Hora atual:</strong> " + timeClient.getFormattedTime() + "</p>";
-  html += "<p><strong>🍽️ Total de alimentações:</strong> " + String(totalFeedings) + "</p>";
-  html += "<p><strong>📦 Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
-  html += "<p><strong>🎯 Meta diária:</strong> " + String(config.dailyGramsTotal) + "g (" + String(config.periodsPerDay) + " refeições)</p>";
-  html += "<p><strong>📏 Calibração:</strong> " + String(config.gramsPerRotation, 1) + "g por rotação</p>";
-  html += "<p><strong>📶 WiFi:</strong> " + String(WiFi.status() == WL_CONNECTED ? "🟢 Conectado" : "🔴 Desconectado") + "</p>";
-  html += "<p><strong>⚙️ Status do Motor:</strong> ";
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Alimentador Pet</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 10px; background: #eef; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 10px; }
+    h1, h2 { text-align: center; }
+    .section { margin: 20px 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+    .btn {
+      display: block; padding: 10px; text-align: center;
+      background: #4CAF50; color: white; text-decoration: none;
+      border-radius: 8px; font-size: 14px;
+    }
+    .btn:hover { background: #45a049; }
+    .warn { background: #f90; }
+    .danger { background: #e33; }
+    .info-box { background: #f0f0f0; padding: 10px; border-radius: 5px; }
+    .schedule { padding: 5px 0; }
+    .small { font-size: 0.9em; color: #555; text-align: center; margin-top: 15px; }
+  </style>
+  <script>setTimeout(()=>location.reload(), 5000);</script>
+</head>
+<body>
+  <div class="container">
+    <h1>🐕 Alimentador Pet</h1>
+
+    <div class="section info-box">
+      <p><b>⏰ Hora:</b> )rawliteral";
+  html += timeClient.getFormattedTime();
+  html += "<br><b>🍽️ Total alimentações:</b> " + String(totalFeedings);
+  html += "<br><b>📦 Total Dispensado:</b> " + String(totalGramsDispensed, 1) + "g";  
+  html += "<br><b>🎯 Meta diária:</b> " + String(config.dailyGramsTotal) + "g (" + String(config.periodsPerDay) + "x)";
+  html += "<br><b>📏 Calibração:</b> " + String(config.gramsPerRotation, 1) + "g/rotação";
+  html += "<br><b>📶 WiFi:</b> " + String(WiFi.status() == WL_CONNECTED ? "🟢 Conectado" : "🔴 Desconectado");
+  html += "<br><b>⚙️ Motor:</b> ";
+
   if (feedingInProgress) {
-    html += "<span class='status-busy'>🔄 Alimentando";
-    html += "<span class='progress-indicator'>" + String(currentRotation + 1) + "/" + String(pendingRotations) + "</span></span>";
-  } else if (motorEnabled) {
-    html += "🟢 Ligado";
+    html += "🔄 Alimentando (" + String(currentRotation + 1) + "/" + String(pendingRotations) + ")";
   } else {
-    html += "⚫ Desligado";
+    html += motorEnabled ? "🟢 Ligado" : "⚫ Desligado";
   }
-  html += "</p>";
-  html += "</div>";
-  html += "<h2>🎮 Controles de Alimentação</h2>";
-  
-  if (feedingInProgress) {
-    html += "<div style='text-align: center; padding: 20px;'>";
-    html += "<p class='status-busy'>⚠️ Motor em funcionamento - Dispensando ração...</p>";
-    html += "<a href='/stop' class='btn btn-danger'>🛑 Parar Alimentação</a>";
-    html += "</div>";
+
+  html += R"rawliteral(</p>
+    </div>
+
+    <div class="section">
+      <h2>🎮 Controles</h2>
+      <div class="grid">)rawliteral";
+
+  if (!feedingInProgress) {
+    html += R"rawliteral(
+        <a href="/feed1" class="btn">🥄 25g</a>
+        <a href="/feed3" class="btn">🍽️ 50g</a>
+        <a href="/feed5" class="btn">🍖 100g</a>
+        <a href="/test" class="btn">🔧 Teste</a>
+        <a href="/reverse" class="btn">↩️ Reverter</a>
+        <a href="/calibrate" class="btn warn">⚖️ Calibrar</a>)rawliteral";
+    if (motorEnabled)
+      html += R"rawliteral(<a href="/motor_off" class="btn warn">⚡ Desligar</a>)rawliteral";
+    else
+      html += R"rawliteral(<a href="/motor_on" class="btn">⚡ Ligar</a>)rawliteral";
   } else {
-    html += "<div class='controls-grid'>";
-    html += "<a href='/feed1' class='btn btn-small'>🥄 25g</a>";
-    html += "<a href='/feed3' class='btn btn-small'>🍽️ 50g</a>";
-    html += "<a href='/feed5' class='btn btn-small'>🍖 100g</a>";
-    html += "<a href='/test' class='btn btn-small'>🔧 Teste</a>";
-    html += "<a href='/reverse' class='btn btn-small'>↩️ Reverter</a>";
-    html += "<a href='/calibrate' class='btn btn-warn'>⚖️ Calibrar</a>";
-    
-    if (motorEnabled) {
-      html += "<a href='/motor_off' class='btn btn-warn'>⚡ Desligar</a>";
-    } else {
-      html += "<a href='/motor_on' class='btn btn-small'>⚡ Ligar</a>";
-    }
-    html += "</div>";
+    html += R"rawliteral(<a href="/stop" class="btn danger">🛑 Parar</a>)rawliteral";
   }
-  
-  html += "<h2>🔧 Configurações e Informações</h2>";
-  html += "<div class='controls-grid'>";
-  html += "<a href='/status' class='btn btn-small'>📊 Status JSON</a>";
-  html += "<a href='/config' class='btn btn-small'>⚙️ Configurações</a>";
-  html += "<a href='/schedule' class='btn btn-small'>⏰ Horários</a>";
-  html += "<a href='/redistribute' class='btn btn-small'>🔄 Redistribuir</a>";
-  html += "<a href='/reset' class='btn btn-danger'>🔄 Reiniciar</a>";
-  html += "</div>";
-  
-  html += "<div class='schedule-list'>";
-  html += "<h2>⏰ Horários Programados</h2>";
-  if (true) { // Check if there are active schedules
-    bool hasSchedules = false;
-    html += "<ul>";
-    for (int i = 0; i < 4; i++) {
-      if (config.feedingTimes[i].active) {
-        hasSchedules = true;
-        html += "<li><strong>🕐 " + String(config.feedingTimes[i].hour) + ":";
-        if (config.feedingTimes[i].minute < 10) html += "0";
-        html += String(config.feedingTimes[i].minute) + "</strong> - ";
-        html += String(config.feedingTimes[i].grams) + "g</li>";
-      }
+
+  html += R"rawliteral(
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🔧 Configurações</h2>
+      <div class="grid">
+        <a href="/status" class="btn">📊 Status</a>
+        <a href="/config" class="btn">⚙️ Config</a>
+        <a href="/schedule" class="btn">⏰ Horários</a>
+        <a href="/redistribute" class="btn">🔄 Redistribuir</a>
+        <a href="/reset" class="btn danger">🔄 Reiniciar</a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>⏰ Horários</h2>)rawliteral";
+
+  bool hasSchedules = false;
+  for (int i = 0; i < 4; i++) {
+    if (config.feedingTimes[i].active) {
+      hasSchedules = true;
+      html += "<div class='schedule'>🕐 <b>" + String(config.feedingTimes[i].hour) + ":";
+      if (config.feedingTimes[i].minute < 10) html += "0";
+      html += String(config.feedingTimes[i].minute) + "</b> - " + String(config.feedingTimes[i].grams) + "g</div>";
     }
-    if (!hasSchedules) {
-      html += "<li style='text-align: center; font-style: italic; color: #666;'>Nenhum horário configurado</li>";
-    }
-    html += "</ul>";
   }
-  html += "</div>";
-  
-  html += "<div class='footer-info'>";
-  html += "<p>💡 <strong>Página atualiza automaticamente a cada 5 segundos</strong></p>";
-  html += "<p>📊 Reconexões WiFi: " + String(wifiReconnectAttempts) + " | 🔧 Versão: " + String(VERSION) + "</p>";
-  html += "</div>";
+  if (!hasSchedules) {
+    html += "<div class='schedule'><i>Nenhum horário configurado</i></div>";
+  }
+
+  html += "<div class='small'>💡 Atualiza a cada 5s | 🔁 WiFi tentativas: " + String(wifiReconnectAttempts) + " | ⚙️ Versão: " + String(VERSION) + "</div>";
   html += "</div></body></html>";
 
   server.send(200, "text/html", html);
 }
+
 
 void handleFeed() {
   if (!feedingInProgress) {
@@ -1067,132 +1059,133 @@ void handleStatus() {
 }
 
 void handleConfig() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Configurações - Alimentador Pet</title>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; }";
-  html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
-  html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += "h2 { color: #555; margin: 30px 0 15px 0; font-size: 1.5em; font-weight: 500; border-bottom: 2px solid #eee; padding-bottom: 10px; }";
-  html += ".info-section { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }";
-  html += ".info-section p { margin: 12px 0; font-size: 1.1em; line-height: 1.6; }";
-  html += ".stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }";
-  html += ".stat-card { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 20px; border-radius: 12px; border-left: 5px solid #2196F3; box-shadow: 0 5px 15px rgba(33,150,243,0.1); }";
-  html += ".calibration-card { background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-left-color: #ff9800; }";
-  html += ".antijam-card { background: linear-gradient(135deg, #f3e5f5, #e1bee7); border-left-color: #9c27b0; }";
-  html += ".form-section { background: linear-gradient(145deg, #e8f5e8, #c8e6c9); padding: 25px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #4CAF50; }";
-  html += ".form-row { display: flex; align-items: center; margin: 15px 0; flex-wrap: wrap; gap: 15px; }";
-  html += ".form-row label { font-weight: 600; color: #555; min-width: 120px; }";
-  html += "input, select { padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; transition: all 0.3s ease; background: white; }";
-  html += "input:focus, select:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 3px rgba(76,175,80,0.1); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); }";
-  html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
-  html += ".schedule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 20px 0; }";
-  html += ".schedule-item { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); border-left: 4px solid #4CAF50; }";
-  html += ".schedule-item.inactive { border-left-color: #ccc; opacity: 0.7; }";
-  html += ".back-link { display: inline-block; margin-top: 25px; color: #666; text-decoration: none; font-weight: 500; padding: 10px 20px; border-radius: 25px; transition: all 0.3s ease; background: #f5f5f5; }";
-  html += ".back-link:hover { color: #4CAF50; background: #e8f5e8; transform: translateX(-5px); }";
-  html += ".system-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }";
-  html += ".info-item { background: white; padding: 15px; border-radius: 8px; text-align: center; }";
-  html += "@media (max-width: 768px) { .container { padding: 20px; margin: 10px; border-radius: 15px; } .stats-grid, .schedule-grid, .system-info { grid-template-columns: 1fr; } .form-row { flex-direction: column; align-items: stretch; } h1 { font-size: 2em; } }";
-  html += "</style>";
-  html += "</head><body><div class='container'>";
-  html += "<h1>⚙️ Configurações do Sistema</h1>";
-  
-  html += "<div class='info-section'>";
-  html += "<div class='system-info'>";
-  html += "<div class='info-item'>";
-  html += "<h3>📱 Versão</h3>";
-  html += "<p><strong>" + String(VERSION) + "</strong></p>";
-  html += "</div>";
-  html += "<div class='info-item'>";
-  html += "<h3>📶 WiFi</h3>";
-  html += "<p><strong>" + String(config.ssid) + "</strong></p>";
-  html += "</div>";
-  html += "<div class='info-item'>";
-  html += "<h3>⚡ Motor</h3>";
-  html += "<p><strong>" + String(config.motorSpeed) + " RPM</strong></p>";
-  html += "</div>";
-  html += "</div>";
-  html += "</div>";
-  
-  html += "<div class='stats-grid'>";
-  html += "<div class='stat-card'>";
-  html += "<h2>📊 Estatísticas de Uso</h2>";
-  html += "<p><strong>🍽️ Total de Alimentações:</strong> " + String(totalFeedings) + "</p>";
-  html += "<p><strong>📦 Total Dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
-  html += "<p><strong>🕐 Tempo Online:</strong> " + String(millis()/1000/60) + " minutos</p>";
-  html += "<p><strong>💾 Memória Livre:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
-  html += "</div>";
-  
-  html += "<div class='stat-card calibration-card'>";
-  html += "<h2>⚖️ Calibração Atual</h2>";
-  html += "<p><strong>📏 Gramas por Rotação:</strong> " + String(config.gramsPerRotation, 1) + "g</p>";
-  html += "<p><strong>🎯 Meta Diária:</strong> " + String(config.dailyGramsTotal) + "g</p>";
-  html += "<p><strong>🔄 Períodos por Dia:</strong> " + String(config.periodsPerDay) + "</p>";
-  html += "<a href='/calibrate' class='btn'>🔧 Recalibrar Sistema</a>";
-  html += "</div>";
-  
-  html += "<div class='stat-card antijam-card'>";
-  html += "<h2>🔧 Sistema Anti-Travamento</h2>";
-  html += "<p><strong>🔄 Reversão a cada:</strong> " + String(REVERSE_INTERVAL_GRAMS, 0) + "g</p>";
-  html += "<p><strong>↩️ Passos anti-travamento:</strong> " + String(REVERSE_STEPS) + "</p>";
-  html += "<p><strong>🔚 Passos reversão final:</strong> " + String(FINAL_REVERSE_STEPS) + "</p>";
-  html += "<p><em>Sistema automático para evitar travamento e gotejamento</em></p>";
-  html += "</div>";
-  html += "</div>";
-  
-  html += "<div class='form-section'>";
-  html += "<h2>🎯 Configurar Meta Diária</h2>";
-  html += "<form action='/set_daily' method='GET'>";
-  html += "<div class='form-row'>";
-  html += "<label>📊 Total por dia:</label>";
-  html += "<input type='number' name='total' value='" + String(config.dailyGramsTotal) + "' min='50' max='1000'>";
-  html += "<span>gramas</span>";
-  html += "</div>";
-  html += "<div class='form-row'>";
-  html += "<label>🔄 Dividir em:</label>";
-  html += "<select name='periods'>";
-  html += "<option value='2'" + String(config.periodsPerDay == 2 ? " selected" : "") + ">2 períodos (manhã/noite)</option>";
-  html += "<option value='3'" + String(config.periodsPerDay == 3 ? " selected" : "") + ">3 períodos (manhã/tarde/noite)</option>";
-  html += "<option value='4'" + String(config.periodsPerDay == 4 ? " selected" : "") + ">4 períodos (6h/12h/17h/21h)</option>";
-  html += "</select>";
-  html += "</div>";
-  html += "<input type='submit' value='💾 Aplicar Nova Meta' class='btn'>";
-  html += "</form>";
-  html += "</div>";
-  
-  html += "<h2>⏰ Horários Atualmente Configurados</h2>";
-  html += "<div class='schedule-grid'>";
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Configurações</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 10px; background: #eef; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 10px; }
+    h1, h2, h3 { text-align: center; margin: 10px 0; }
+    .info-box, .form-box, .stat-box { background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+    .btn {
+      display: inline-block; background: #4CAF50; color: white;
+      padding: 10px 15px; border-radius: 8px; text-decoration: none;
+      font-weight: bold; text-align: center;
+    }
+    .btn:hover { background: #45a049; }
+    .form-row { margin: 10px 0; }
+    label { display: block; margin-bottom: 5px; font-weight: 600; }
+    input, select {
+      width: 100%; padding: 8px; border-radius: 5px;
+      border: 1px solid #ccc; font-size: 14px;
+    }
+    .schedule-item {
+      padding: 10px; border-radius: 6px; background: #fff;
+      border-left: 4px solid #4CAF50;
+    }
+    .inactive { border-left-color: #aaa; color: #666; }
+    .center { text-align: center; }
+    .small { font-size: 0.9em; color: #555; text-align: center; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ Configurações</h1>
+
+    <div class="info-box grid">
+      <div><h3>📱 Versão</h3><p><b>)rawliteral" + String(VERSION) + R"rawliteral(</b></p></div>
+      <div><h3>📶 WiFi</h3><p><b>)rawliteral" + String(config.ssid) + R"rawliteral(</b></p></div>
+      <div><h3>⚡ Motor</h3><p><b>)rawliteral" + String(config.motorSpeed) + R"rawliteral( RPM</b></p></div>
+    </div>
+
+    <div class="stat-box">
+      <h2>📊 Estatísticas</h2>
+      <p><b>🍽️ Total Alimentações:</b> )rawliteral" + String(totalFeedings) + R"rawliteral(</p>
+      <p><b>📦 Total Dispensado:</b> )rawliteral" + String(totalGramsDispensed, 1) + R"rawliteral(g</p>
+      <p><b>🕐 Tempo Online:</b> )rawliteral" + String(millis() / 60000) + R"rawliteral( minutos</p>
+      <p><b>💾 Memória Livre:</b> )rawliteral" + String(ESP.getFreeHeap()) + R"rawliteral( bytes</p>
+    </div>
+
+    <div class="stat-box">
+      <h2>⚖️ Calibração</h2>
+      <p><b>📏 Gramas por Rotação:</b> )rawliteral" + String(config.gramsPerRotation, 1) + R"rawliteral(g</p>
+      <p><b>🎯 Meta Diária:</b> )rawliteral" + String(config.dailyGramsTotal) + R"rawliteral(g</p>
+      <p><b>🔄 Períodos:</b> )rawliteral" + String(config.periodsPerDay) + R"rawliteral(</p>
+      <div class="center"><a href="/calibrate" class="btn">🔧 Recalibrar</a></div>
+    </div>
+
+    <div class="stat-box">
+      <h2>🔧 Anti-Travamento</h2>
+      <p><b>🔄 Reversão a cada:</b> )rawliteral" + String(REVERSE_INTERVAL_GRAMS) + R"rawliteral(g</p>
+      <p><b>↩️ Passos:</b> )rawliteral" + String(REVERSE_STEPS) + R"rawliteral(</p>
+      <p><b>🔚 Final:</b> )rawliteral" + String(FINAL_REVERSE_STEPS) + R"rawliteral(</p>
+    </div>
+
+    <div class="form-box">
+      <h2>🎯 Meta Diária</h2>
+      <form action="/set_daily" method="GET">
+        <div class="form-row">
+          <label>Total por dia (g)</label>
+          <input type="number" name="total" value=")rawliteral" + String(config.dailyGramsTotal) + R"rawliteral(" min="50" max="1000">
+        </div>
+        <div class="form-row">
+          <label>Períodos por dia</label>
+          <select name="periods">)rawliteral";
+
+  for (int i = 2; i <= 4; i++) {
+    html += "<option value='" + String(i) + "'";
+    if (config.periodsPerDay == i) html += " selected";
+    html += ">" + String(i) + " períodos</option>";
+  }
+
+  html += R"rawliteral(
+          </select>
+        </div>
+        <div class="center"><input type="submit" value="💾 Aplicar" class="btn"></div>
+      </form>
+    </div>
+
+    <h2>⏰ Horários Configurados</h2>
+    <div class="grid">)rawliteral";
+
   for (int i = 0; i < 4; i++) {
-    html += "<div class='schedule-item" + String(config.feedingTimes[i].active ? "" : " inactive") + "'>";
-    html += "<h3>🍽️ Horário " + String(i+1) + "</h3>";
-    if (config.feedingTimes[i].active) {
-      html += "<p><strong>🕐 Hora:</strong> " + String(config.feedingTimes[i].hour) + ":";
+    bool active = config.feedingTimes[i].active;
+    html += "<div class='schedule-item" + String(active ? "" : " inactive") + "'>";
+    html += "<h3>Horário " + String(i + 1) + "</h3>";
+    if (active) {
+      html += "<p><b>🕐</b> " + String(config.feedingTimes[i].hour) + ":";
       if (config.feedingTimes[i].minute < 10) html += "0";
       html += String(config.feedingTimes[i].minute) + "</p>";
-      html += "<p><strong>⚖️ Quantidade:</strong> " + String(config.feedingTimes[i].grams) + "g</p>";
-      html += "<p><strong>✅ Status:</strong> Ativo</p>";
+      html += "<p><b>⚖️</b> " + String(config.feedingTimes[i].grams) + "g</p>";
+      html += "<p><b>✅ Ativo</b></p>";
     } else {
-      html += "<p><strong>❌ Status:</strong> Desativado</p>";
+      html += "<p><b>❌ Desativado</b></p>";
     }
     html += "</div>";
   }
-  html += "</div>";
-  
-  html += "<div style='text-align: center; margin-top: 30px;'>";
-  html += "<a href='/schedule' class='btn'>⏰ Editar Horários</a>";
-  html += "<a href='/redistribute' class='btn'>🔄 Redistribuir Automaticamente</a>";
-  html += "</div>";
-  
-  html += "<a href='/' class='back-link'>← Voltar ao Dashboard</a>";
-  html += "</div></body></html>";
-  
+
+  html += R"rawliteral(
+    </div>
+
+    <div class="center">
+      <a href="/schedule" class="btn">⏰ Editar Horários</a>
+      <a href="/redistribute" class="btn">🔄 Redistribuir</a>
+    </div>
+
+    <div class="small"><a href="/" class="btn">← Voltar</a></div>
+  </div>
+</body>
+</html>
+)rawliteral";
+
   server.send(200, "text/html", html);
 }
+
 
 void handleMotorOn() {
   if (!feedingInProgress) {
@@ -1213,110 +1206,109 @@ void handleMotorOff() {
 }
 
 void handleCalibrate() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Calibração - Alimentador Pet</title>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; }";
-  html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
-  html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += "h2 { color: #555; margin: 30px 0 15px 0; font-size: 1.5em; font-weight: 500; border-bottom: 2px solid #eee; padding-bottom: 10px; }";
-  html += ".current-calibration { background: linear-gradient(135deg, #fff3e0, #ffe0b2); padding: 20px; border-radius: 15px; margin: 20px 0; text-align: center; font-size: 1.2em; box-shadow: 0 5px 15px rgba(255,152,0,0.1); }";
-  html += ".instructions { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 25px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #2196F3; }";
-  html += ".instructions ol { margin: 0; padding-left: 20px; line-height: 1.8; }";
-  html += ".instructions li { margin: 8px 0; font-size: 1.1em; }";
-  html += ".form-section { background: linear-gradient(145deg, #e8f5e8, #c8e6c9); padding: 25px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #4CAF50; }";
-  html += ".form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }";
-  html += ".form-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }";
-  html += ".form-row { margin: 15px 0; }";
-  html += ".form-row label { display: block; font-weight: 600; color: #555; margin-bottom: 8px; }";
-  html += "input { padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; width: 100%; transition: all 0.3s ease; background: white; }";
-  html += "input:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 3px rgba(76,175,80,0.1); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); width: 100%; text-align: center; }";
-  html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
-  html += ".btn-secondary { background: linear-gradient(135deg, #2196F3, #1976D2); box-shadow: 0 6px 20px rgba(33,150,243,0.3); }";
-  html += ".btn-secondary:hover { background: linear-gradient(135deg, #1976D2, #2196F3); box-shadow: 0 8px 25px rgba(33,150,243,0.4); }";
-  html += ".status-warning { background: linear-gradient(135deg, #fff3e0, #ffe0b2); color: #f57c00; padding: 15px; border-radius: 10px; text-align: center; margin: 20px 0; border: 1px solid #ffcc02; font-weight: bold; }";
-  html += ".back-link { display: inline-block; margin-top: 25px; color: #666; text-decoration: none; font-weight: 500; padding: 10px 20px; border-radius: 25px; transition: all 0.3s ease; background: #f5f5f5; }";
-  html += ".back-link:hover { color: #4CAF50; background: #e8f5e8; transform: translateX(-5px); }";
-  html += ".divider { margin: 30px 0; border-top: 2px solid #eee; }";
-  html += "@media (max-width: 768px) { .container { padding: 20px; margin: 10px; border-radius: 15px; } .form-grid { grid-template-columns: 1fr; } h1 { font-size: 2em; } }";
-  html += "</style>";
-  html += "</head><body><div class='container'>";
-  html += "<h1>⚖️ Calibração do Sistema</h1>";
-  
-  html += "<div class='current-calibration'>";
-  html += "<h2>📊 Calibração Atual</h2>";
-  html += "<p style='font-size: 1.5em; margin: 0;'><strong>" + String(config.gramsPerRotation, 1) + "g</strong> por rotação</p>";
-  html += "</div>";
-  
-  html += "<div class='instructions'>";
-  html += "<h2>🔧 Como Calibrar o Sistema</h2>";
-  html += "<ol>";
-  html += "<li><strong>Preparação:</strong> Coloque um recipiente vazio na saída da rosca</li>";
-  html += "<li><strong>Dispensar:</strong> Configure quantas rotações e clique em 'Dispensar para Calibrar'</li>";
-  html += "<li><strong>Pesar:</strong> Aguarde o sistema dispensar e pese a ração no recipiente</li>";
-  html += "<li><strong>Calcular:</strong> Digite o peso medido e o número de rotações utilizadas</li>";
-  html += "<li><strong>Salvar:</strong> O sistema calculará automaticamente a nova calibração</li>";
-  html += "</ol>";
-  html += "</div>";
-  
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Calibração</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 15px; background: #eef; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 10px; }
+    h1, h2, h3 { text-align: center; margin: 10px 0; }
+    .section { margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+    .form { padding: 15px; background: #fff; border-radius: 8px; }
+    .form label { display: block; margin-bottom: 5px; font-weight: bold; }
+    .form input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+    .btn {
+      display: inline-block; background: #4CAF50; color: #fff; padding: 10px 15px;
+      margin-top: 10px; text-align: center; border-radius: 6px; font-weight: bold; text-decoration: none;
+    }
+    .btn-secondary { background: #2196F3; }
+    .warning { background: #fff3cd; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; }
+    ul, ol { padding-left: 20px; line-height: 1.6; }
+    .center { text-align: center; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚖️ Calibração</h1>
+    <div class="section center">
+      <h2>📊 Atual</h2>
+      <p><strong>)rawliteral" + String(config.gramsPerRotation, 1) + R"rawliteral(g</strong> por rotação</p>
+    </div>
+
+    <div class="section">
+      <h2>🔧 Como Calibrar</h2>
+      <ol>
+        <li>Coloque um recipiente vazio sob a saída da ração.</li>
+        <li>Configure o número de rotações e clique em "Dispensar".</li>
+        <li>Pese a quantidade dispensada.</li>
+        <li>Digite o peso medido e o número de rotações usadas.</li>
+        <li>Salve para atualizar a calibração.</li>
+      </ol>
+    </div>
+)rawliteral";
+
   if (feedingInProgress) {
-    html += "<div class='status-warning'>";
-    html += "⚠️ Sistema dispensando ração para calibração...";
-    html += "<br><em>Aguarde a conclusão e pese a ração dispensada</em>";
-    html += "</div>";
+    html += R"rawliteral(
+    <div class="warning">
+      ⚠️ Dispensando ração para calibração...<br>
+      Aguarde e pese a ração dispensada.
+    </div>
+)rawliteral";
   } else {
-    html += "<div class='form-grid'>";
-    
-    html += "<div class='form-card'>";
-    html += "<h2>🔄 1. Dispensar para Teste</h2>";
-    html += "<form action='/set_calibration' method='GET'>";
-    html += "<div class='form-row'>";
-    html += "<label>🔢 Número de rotações:</label>";
-    html += "<input type='number' name='rotations' value='3' min='1' max='10'>";
-    html += "</div>";
-    html += "<input type='submit' value='🚀 Dispensar para Calibrar' class='btn btn-secondary'>";
-    html += "</form>";
-    html += "<p><em>Recomendado: 3-5 rotações para calibração precisa</em></p>";
-    html += "</div>";
-    
-    html += "<div class='form-card'>";
-    html += "<h2>💾 2. Salvar Nova Calibração</h2>";
-    html += "<form action='/set_calibration' method='GET'>";
-    html += "<div class='form-row'>";
-    html += "<label>⚖️ Peso medido (gramas):</label>";
-    html += "<input type='number' name='grams' step='0.1' min='0.1' placeholder='Ex: 25.5'>";
-    html += "</div>";
-    html += "<div class='form-row'>";
-    html += "<label>🔢 Rotações dispensadas:</label>";
-    html += "<input type='number' name='rotations' value='3' min='1'>";
-    html += "</div>";
-    html += "<input type='submit' value='💾 Salvar Nova Calibração' class='btn'>";
-    html += "</form>";
-    html += "<p><em>Digite exatamente o peso que você mediu na balança</em></p>";
-    html += "</div>";
-    
-    html += "</div>";
+    html += R"rawliteral(
+    <div class="grid">
+      <div class="form">
+        <h3>🔄 1. Dispensar</h3>
+        <form action="/set_calibration" method="GET">
+          <label>Rotações:</label>
+          <input type="number" name="rotations" value="3" min="1" max="10">
+          <input type="submit" value="🚀 Dispensar" class="btn btn-secondary">
+        </form>
+        <p><em>Recomenda-se 3-5 rotações</em></p>
+      </div>
+
+      <div class="form">
+        <h3>💾 2. Salvar</h3>
+        <form action="/set_calibration" method="GET">
+          <label>Peso medido (g):</label>
+          <input type="number" name="grams" step="0.1" min="0.1" placeholder="Ex: 25.5">
+          <label>Rotações usadas:</label>
+          <input type="number" name="rotations" value="3" min="1">
+          <input type="submit" value="💾 Salvar" class="btn">
+        </form>
+        <p><em>Use o valor exato da balança</em></p>
+      </div>
+    </div>
+)rawliteral";
   }
-  
-  html += "<div class='instructions' style='margin-top: 30px;'>";
-  html += "<h2>💡 Dicas para Calibração Precisa</h2>";
-  html += "<ul style='line-height: 1.6;'>";
-  html += "<li><strong>Use uma balança precisa:</strong> Prefira balanças digitais com precisão de 0.1g</li>";
-  html += "<li><strong>Teste múltiplas vezes:</strong> Faça 2-3 calibrações e use a média</li>";
-  html += "<li><strong>Ração seca:</strong> Use ração com baixa umidade para resultados consistentes</li>";
-  html += "<li><strong>Limpeza:</strong> Certifique-se que a rosca está limpa antes de calibrar</li>";
-  html += "</ul>";
-  html += "</div>";
-  
-  html += "<a href='/' class='back-link'>← Voltar ao Dashboard</a>";
-  html += "</div></body></html>";
-  
+
+  html += R"rawliteral(
+    <div class="section">
+      <h2>💡 Dicas</h2>
+      <ul>
+        <li>Use balança digital com precisão de 0.1g.</li>
+        <li>Repita a calibração 2-3 vezes e tire a média.</li>
+        <li>Evite umidade na ração.</li>
+        <li>Certifique-se de que a rosca está limpa.</li>
+      </ul>
+    </div>
+
+    <div class="center">
+      <a href="/" class="btn">← Voltar</a>
+    </div>
+  </div>
+</body>
+</html>
+)rawliteral";
+
   server.send(200, "text/html", html);
 }
+
 
 void handleSetCalibration() {
   if (server.hasArg("grams") && server.hasArg("rotations")) {
@@ -1380,82 +1372,101 @@ void handleRedistribute() {
 }
 
 void handleReset() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Reiniciar Sistema - Alimentador Pet</title>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; }";
-  html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
-  html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += ".warning-box { background: linear-gradient(135deg, #ffe6e6, #ffcccc); padding: 20px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #ff9999; text-align: center; }";
-  html += ".option-card { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow:  0 5px 15px rgba(0,0,0,0.08); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 16px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none, display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); text-align: center; width: 100%; }";
-  html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); }";
-  html += ".btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); box-shadow: 0 6px 20px rgba(244,67,54,0.3); }";
-  html += ".btn-danger:hover { box-shadow: 0 8px 25px rgba(244,67,54,0.4); background: linear-gradient(135deg, #d32f2f, #f44336); }";
-  html += ".btn-warning { background: linear-gradient(135deg, #ff9800, #f57c00); box-shadow: 0 6px 20px rgba(255,152,0,0.3); }";
-  html += ".btn-warning:hover { box-shadow: 0 8px 25px rgba(255,152,0,0.4); background: linear-gradient(135deg, #f57c00, #ff9800); }";
-  html += ".back-link { display: inline-block; margin-top: 25px; color: #666; text-decoration: none; font-weight: 500; padding: 10px 20px; border-radius: 25px; transition: all 0.3s ease; background: #f5f5f5; text-align: center; }";
-  html += ".back-link:hover { color: #4CAF50; background: #e8f5e8; }";
-  html += ".stats-info { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 5px solid #2196F3; }";
-  html += "</style>";
-  html += "</head><body><div class='container'>";
-  html += "<h1>🔄 Opções de Reinicialização</h1>";
-  
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Reiniciar Sistema</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; background: #f0f0f0; padding: 20px; margin: 0; }
+    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+    h1 { text-align: center; font-size: 1.8em; margin-bottom: 20px; }
+    h2 { font-size: 1.3em; margin: 10px 0; }
+    .warning-box, .option-card, .stats-info {
+      background: #f9f9f9; padding: 15px; border-radius: 10px; margin: 15px 0;
+      border-left: 4px solid #ccc;
+    }
+    .btn {
+      display: block; width: 100%; text-align: center; padding: 12px; margin: 10px 0;
+      border-radius: 5px; color: white; text-decoration: none; font-weight: bold;
+      border: none; cursor: pointer;
+    }
+    .btn-warning { background: #ff9800; }
+    .btn-danger { background: #f44336; }
+    .btn:hover { opacity: 0.9; }
+    .back-link {
+      display: inline-block; margin-top: 25px; text-decoration: none; color: #333;
+      background: #e0e0e0; padding: 10px 20px; border-radius: 20px;
+    }
+    .back-link:hover { background: #d0ffd0; color: #4CAF50; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔄 Reinicialização</h1>
+)rawliteral";
+
   if (feedingInProgress) {
-    html += "<div class='warning-box'>";
-    html += "<h2>⚠️ Sistema Ocupado</h2>";
-    html += "<p>Não é possível reiniciar enquanto o motor está em funcionamento.</p>";
-    html += "<p>Aguarde a conclusão da alimentação atual.</p>";
-    html += "</div>";
+    html += R"rawliteral(
+    <div class="warning-box">
+      <h2>⚠️ Sistema Ocupado</h2>
+      <p>O motor está em funcionamento. Aguarde a alimentação terminar para continuar.</p>
+    </div>
+    )rawliteral";
   } else {
-    html += "<div class='warning-box'>";
-    html += "<h2>⚠️ Escolha uma Opção</h2>";
-    html += "<p>Selecione o tipo de reinicialização que deseja realizar:</p>";
-    html += "</div>";
-    
-    html += "<div class='option-card'>";
-    html += "<h2>📊 Resetar Apenas Estatísticas</h2>";
-    html += "<div class='stats-info'>";
-    html += "<p><strong>📈 Total de alimentações:</strong> " + String(totalFeedings) + "</p>";
-    html += "<p><strong>📦 Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
-    html += "<p><strong>🔄 Total de rotações:</strong> " + String(totalRotations) + "</p>";
-    html += "</div>";
-    html += "<p><em>Zera os contadores de alimentações, gramas dispensadas e rotações. Mantém todas as configurações, calibrações e horários.</em></p>";
-    html += "<a href='javascript:void(0)' onclick='resetStats()' class='btn btn-warning'>📊 Resetar Estatísticas</a>";
-    html += "</div>";
-    
-    html += "<div class='option-card'>";
-    html += "<h2>🔄 Reiniciar Sistema Completo</h2>";
-    html += "<p><em>Reinicia completamente o ESP8266. Mantém todas as configurações salvas na memória (EEPROM).</em></p>";
-    html += "<a href='javascript:void(0)' onclick='restartSystem()' class='btn btn-danger'>🔄 Reiniciar Sistema</a>";
-    html += "</div>";
+    html += R"rawliteral(
+    <div class="warning-box">
+      <h2>⚠️ Atenção</h2>
+      <p>Escolha abaixo o tipo de reinicialização:</p>
+    </div>
+
+    <div class="option-card">
+      <h2>📊 Resetar Estatísticas</h2>
+      <div class="stats-info">
+        <p><strong>Alimentações:</strong> )rawliteral" + String(totalFeedings) + R"rawliteral(</p>
+        <p><strong>Gramas:</strong> )rawliteral" + String(totalGramsDispensed, 1) + R"rawliteral(g</p>
+        <p><strong>Rotações:</strong> )rawliteral" + String(totalRotations) + R"rawliteral(</p>
+      </div>
+      <p><em>Essa ação mantém configurações e horários.</em></p>
+      <a href="javascript:void(0)" onclick="resetStats()" class="btn btn-warning">📊 Resetar Estatísticas</a>
+    </div>
+
+    <div class="option-card">
+      <h2>🔄 Reiniciar Sistema</h2>
+      <p><em>Reinicia o ESP8266, mantendo configurações.</em></p>
+      <a href="javascript:void(0)" onclick="restartSystem()" class="btn btn-danger">🔄 Reiniciar Sistema</a>
+    </div>
+    )rawliteral";
   }
-  
-  html += "<a href='/' class='back-link'>← Voltar ao Dashboard</a>";
-  html += "</div>";
-  
-  html += "<script>";
-  html += "function resetStats() {";
-  html += "  if(confirm('Tem certeza que deseja resetar todas as estatísticas?\\n\\nIsto irá zerar:\\n- Total de alimentações\\n- Total de gramas dispensadas\\n- Total de rotações\\n\\nAs configurações e horários serão mantidos.')) {";
-  html += "    window.location.href = '/reset_stats';";
-  html += "  }";
-  html += "}";
-  html += "function restartSystem() {";
-  html += "  if(confirm('Tem certeza que deseja reiniciar o sistema completo?\\n\\nO ESP8266 será reiniciado e você precisará aguardar a reconexão.')) {";
-  html += "    fetch('/reset_system').then(function() {";
-  html += "      alert('Sistema reiniciando... Aguarde alguns segundos e atualize a página.');";
-  html += "      setTimeout(function() { window.location.href = '/'; }, 5000);";
-  html += "    });";
-  html += "  }";
-  html += "}";
-  html += "</script>";
-  html += "</body></html>";
-  
+
+  html += R"rawliteral(
+    <a href="/" class="back-link">← Voltar ao Dashboard</a>
+  </div>
+
+  <script>
+    function resetStats() {
+      if(confirm('Deseja resetar as estatísticas?\n\nIsso irá zerar:\n- Total de alimentações\n- Total de gramas\n- Total de rotações\n\nAs configurações serão mantidas.')) {
+        window.location.href = '/reset_stats';
+      }
+    }
+    function restartSystem() {
+      if(confirm('Deseja reiniciar o sistema agora?\n\nO dispositivo será reiniciado.')) {
+        fetch('/reset_system').then(() => {
+          alert('Reiniciando o sistema... Aguarde.');
+          setTimeout(() => { window.location.href = '/'; }, 5000);
+        });
+      }
+    }
+  </script>
+</body>
+</html>
+)rawliteral";
+
   server.send(200, "text/html", html);
 }
+
 
 void handleResetStats() {
   if (!feedingInProgress) {
@@ -1484,168 +1495,67 @@ void handleResetStats() {
 }
 
 void handleSchedule() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<title>Configurar Horários - Alimentador Pet</title>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; }";
-  html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
-  html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += "h3 { color: #555; margin: 0 0 15px 0; font-size: 1.4em; font-weight: 500; }";
-  html += ".daily-info { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 20px; border-radius: 15px; margin-bottom: 30px; text-align: center; font-size: 1.2em; box-shadow: 0 5px 15px rgba(76,175,80,0.3); }";
-  html += ".schedule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 25px; margin-bottom: 30px; }";
-  html += ".schedule-row { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 20px; border: 2px solid #e9ecef; transition: all 0.4s ease; position: relative; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }";
-  html += ".schedule-row:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0,0,0,0.12); }";
-  html += ".schedule-row.active { border-color: #4CAF50; background: linear-gradient(145deg, #f1f8e9, #e8f5e8); box-shadow: 0 8px 20px rgba(76,175,80,0.2); }";
-  html += ".schedule-row.inactive { opacity: 0.6; border-color: #dee2e6; background: linear-gradient(145deg, #f8f9fa, #e9ecef); }";
-  html += ".schedule-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #eee; }";
-  html += ".toggle-switch { position: relative; display: inline-block; width: 70px; height: 40px; }";
-  html += ".toggle-switch input { opacity: 0; width: 0; height: 0; }";
-  html += ".slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, #ccc, #bbb); transition: 0.4s; border-radius: 40px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }";
-  html += ".slider:before { position: absolute; content: ''; height: 32px; width: 32px; left: 4px; bottom: 4px; background: linear-gradient(135deg, #fff, #f0f0f0); transition: 0.4s; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }";
-  html += "input:checked + .slider { background: linear-gradient(135deg, #4CAF50, #45a049); }";
-  html += "input:checked + .slider:before { transform: translateX(30px); }";
-  html += ".time-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 20px; align-items: end; }";
-  html += ".input-group { display: flex; flex-direction: column; }";
-  html += ".input-group label { font-weight: 600; color: #555; margin-bottom: 8px; font-size: 0.95em; }";
-  html += "select, input[type='number'] { padding: 12px 15px; border: 2px solid #ddd; border-radius: 12px; font-size: 16px; transition: all 0.3s ease; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }";
-  html += "select:focus, input[type='number']:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 4px rgba(76,175,80,0.1), 0 2px 8px rgba(0,0,0,0.1); transform: translateY(-1px); }";
-  html += ".grams-input { width: 100%; max-width: 120px; }";
-  html += ".btn-container { text-align: center; margin-top: 40px; }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 16px 35px; margin: 10px; border: none; cursor: pointer; border-radius: 30px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); }";
-  html += ".btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
-  html += ".btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); box-shadow: 0 6px 20px rgba(244,67,54,0.3); }";
-  html += ".btn-danger:hover { box-shadow: 0 10px 30px rgba(244,67,54,0.4); background: linear-gradient(135deg, #d32f2f, #f44336); }";
-  html += ".tips { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 25px; border-radius: 15px; margin-top: 30px; border-left: 5px solid #2196F3; box-shadow: 0 5px 15px rgba(33,150,243,0.1); }";
-  html += ".tips h3 { color: #1976D2; margin-top: 0; font-size: 1.3em; }";
-  html += ".tips ul { color: #555; line-height: 1.8; margin: 0; }";
-  html += ".tips li { margin-bottom: 8px; }";
-  html += ".back-link { display: inline-block; margin-top: 25px; color: #666; text-decoration: none; font-weight: 500; padding: 10px 20px; border-radius: 25px; transition: all 0.3s ease; background: #f5f5f5; }";
-  html += ".back-link:hover { color: #4CAF50; background: #e8f5e8; transform: translateX(-5px); }";
-  html += "@media (max-width: 768px) { .container { padding: 20px; margin: 10px; border-radius: 15px; } .schedule-grid { grid-template-columns: 1fr; gap: 20px; } .time-inputs { grid-template-columns: 1fr 1fr 1fr; gap: 15px; } h1 { font-size: 2em; } .btn { padding: 14px 25px; margin: 8px; } }";
-  html += "</style>";
-  html += "<script>";
-  html += "function toggleSchedule(index) {";
-  html += "  const row = document.getElementById('schedule-' + index);";
-  html += "  const checkbox = document.getElementById('active' + index);";
-  html += "  if (checkbox.checked) {";
-  html += "    row.classList.add('active');";
-  html += "    row.classList.remove('inactive');";
-  html += "  } else {";
-  html += "    row.classList.remove('active');";
-  html += "    row.classList.add('inactive');";
-  html += "  }";
-  html += "}";
-  html += "function updateTotalGrams() {";
-  html += "  let total = 0;";
-  html += "  for(let i = 0; i < 4; i++) {";
-  html += "    const checkbox = document.getElementById('active' + i);";
-  html += "    const gramsInput = document.querySelector('input[name=\"grams' + i + '\"]');";
-  html += "    if(checkbox && checkbox.checked && gramsInput) {";
-  html += "      total += parseInt(gramsInput.value) || 0;";
-  html += "    }";
-  html += "  }";
-  html += "  const info = document.querySelector('.daily-info');";
-  html += "  if(info) {";
-  html += "    const currentTotal = " + String(config.dailyGramsTotal) + ";";
-  html += "    const diff = total - currentTotal;";
-  html += "    let statusText = '';";
-  html += "    if(diff > 0) statusText = ' (+' + diff + 'g)';";
-  html += "    else if(diff < 0) statusText = ' (' + diff + 'g)';";
-  html += "    info.innerHTML = '<strong>📊 Meta Diária:</strong> " + String(config.dailyGramsTotal) + "g dividida em " + String(config.periodsPerDay) + " períodos<br><strong>🧮 Total Configurado:</strong> ' + total + 'g' + statusText;";
-  html += "  }";
-  html += "}";
-  html += "document.addEventListener('DOMContentLoaded', function() {";
-  html += "  const gramsInputs = document.querySelectorAll('input[type=\"number\"]');";
-  html += "  const checkboxes = document.querySelectorAll('input[type=\"checkbox\"]');";
-  html += "  gramsInputs.forEach(input => input.addEventListener('input', updateTotalGrams));";
-  html += "  checkboxes.forEach(checkbox => checkbox.addEventListener('change', updateTotalGrams));";
-  html += "  updateTotalGrams();";
-  html += "});";
-  html += "</script>";
-  html += "</head><body><div class='container'>";
-  html += "<h1>⏰ Configurar Horários de Alimentação</h1>";
-  
-  html += "<div class='daily-info'>";
-  html += "<strong>📊 Meta Diária:</strong> " + String(config.dailyGramsTotal) + "g dividida em " + String(config.periodsPerDay) + " períodos";
-  html += "</div>";
-  
-  html += "<form action='/set_schedule' method='GET'>";
-  html += "<div class='schedule-grid'>";
-  
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Horários</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; background: #eef; margin: 0; padding: 15px; }
+    .container { max-width: 450px; margin: auto; background: #fff; padding: 20px; border-radius: 10px; }
+    h2 { margin-top: 0; text-align: center; }
+    form { margin-top: 20px; }
+    .row { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
+    label { display: inline-block; width: 50px; margin-right: 5px; }
+    input[type="number"] { width: 55px; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+    input[type="checkbox"] { margin-bottom: 5px; }
+    .btn {
+      display: inline-block; padding: 10px 18px; background: #4CAF50; color: #fff;
+      border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
+    }
+    .btn-cancel {
+      background: #bbb; margin-left: 10px; text-decoration: none; color: #fff;
+      padding: 10px 18px; border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Configurar Horários</h2>
+    <form action="/set_schedule" method="GET">
+)rawliteral";
+
   for (int i = 0; i < 4; i++) {
-    html += "<div id='schedule-" + String(i) + "' class='schedule-row" + String(config.feedingTimes[i].active ? " active" : " inactive") + "'>";
+    html += "<div class='row'>";
+    html += "<input type='checkbox' name='active" + String(i) + "' value='1'";
+    if (config.feedingTimes[i].active) html += " checked";
+    html += "> Ativo<br>";
+
+    html += "<label>Hora:</label>";
+    html += "<input type='number' name='hour" + String(i) + "' min='0' max='23' value='" + String(config.feedingTimes[i].hour) + "'>";
     
-    html += "<div class='schedule-header'>";
-    html += "<h3>🍽️ Horário " + String(i + 1) + "</h3>";
-    html += "<label class='toggle-switch'>";
-    html += "<input type='checkbox' id='active" + String(i) + "' name='active" + String(i) + "' value='1'" + String(config.feedingTimes[i].active ? " checked" : "") + " onchange='toggleSchedule(" + String(i) + ")'>";
-    html += "<span class='slider'></span>";
-    html += "</label>";
-    html += "</div>";
+    html += "<label>Min:</label>";
+    html += "<input type='number' name='minute" + String(i) + "' min='0' max='59' value='" + String(config.feedingTimes[i].minute) + "'>";
     
-    html += "<div class='time-inputs'>";
-    
-    // Hora
-    html += "<div class='input-group'>";
-    html += "<label>🕐 Hora:</label>";
-    html += "<select name='hour" + String(i) + "'>";
-    for (int h = 0; h < 24; h++) {
-      html += "<option value='" + String(h) + "'" + String(config.feedingTimes[i].hour == h ? " selected" : "") + ">";
-      if (h < 10) html += "0";
-      html += String(h) + ":00</option>";
-    }
-    html += "</select>";
-    html += "</div>";
-    
-    // Minuto
-    html += "<div class='input-group'>";
-    html += "<label>⏱️ Minuto:</label>";
-    html += "<select name='minute" + String(i) + "'>";
-    for (int m = 0; m < 60; m += 5) {
-      html += "<option value='" + String(m) + "'" + String(config.feedingTimes[i].minute == m ? " selected" : "") + ">";
-      if (m < 10) html += "0";
-      html += String(m) + "</option>";
-    }
-    html += "</select>";
-    html += "</div>";
-    
-    // Gramas
-    html += "<div class='input-group'>";
-    html += "<label>⚖️ Gramas:</label>";
-    html += "<input type='number' class='grams-input' name='grams" + String(i) + "' value='" + String(config.feedingTimes[i].grams) + "' min='1' max='500'>";
-    html += "</div>";
-    
-    html += "</div>";
+    html += "<label>g:</label>";
+    html += "<input type='number' name='grams" + String(i) + "' min='1' max='500' value='" + String(config.feedingTimes[i].grams) + "'>";
     html += "</div>";
   }
-  
-  html += "</div>"; // fecha schedule-grid
-  
-  html += "<div class='btn-container'>";
-  html += "<input type='submit' value='💾 Salvar Horários' class='btn'>";
-  html += "<a href='/' class='btn btn-danger'>❌ Cancelar</a>";
-  html += "</div>";
-  html += "</form>";
-  
-  html += "<div class='tips'>";
-  html += "<h3>💡 Dicas e Instruções</h3>";
-  html += "<ul>";
-  html += "<li><strong>Ativar/Desativar:</strong> Use o interruptor para habilitar ou desabilitar cada horário</li>";
-  html += "<li><strong>Precisão:</strong> Minutos são configurados de 5 em 5 para maior praticidade</li>";
-  html += "<li><strong>Flexibilidade:</strong> Ajuste as gramas individualmente conforme a necessidade do seu pet</li>";
-  html += "<li><strong>Distribuição Automática:</strong> Use 'Redistribuir' na página principal para dividir a meta diária automaticamente</li>";
-  html += "<li><strong>Validação:</strong> O sistema verifica se os horários não se sobrepõem</li>";
-  html += "</ul>";
-  html += "</div>";
-  
-  html += "<a href='/' class='back-link'>← Voltar ao Menu Principal</a>";
-  html += "</div></body></html>";
-  
+
+  html += R"rawliteral(
+      <input type="submit" value="Salvar" class="btn">
+      <a href="/" class="btn-cancel">Cancelar</a>
+    </form>
+  </div>
+</body>
+</html>
+)rawliteral";
+
   server.send(200, "text/html", html);
 }
+
 
 void handleSetSchedule() {
   if (!feedingInProgress) {
@@ -1917,49 +1827,4 @@ void handleConfirmReset() {
   logEvent("SYSTEM_RESET", "Sistema resetado pelo usuário via web");
   delay(2000);
   ESP.restart(); // Reinicia o ESP8266
-}
-
-// Função para configurar microstepping via software (OPCIONAL)
-// Use apenas se conectar MS1, MS2, MS3 aos pinos do ESP8266
-void setMicrostepping(int mode) {
-  /*
-  // Descomente se conectar os pinos MS
-  #ifdef MS1_PIN
-    pinMode(MS1_PIN, OUTPUT);
-    pinMode(MS2_PIN, OUTPUT);
-    pinMode(MS3_PIN, OUTPUT);
-    
-    switch(mode) {
-      case 1:  // Full step
-        digitalWrite(MS1_PIN, LOW);
-        digitalWrite(MS2_PIN, LOW);
-        digitalWrite(MS3_PIN, LOW);
-        break;
-      case 2:  // Half step
-        digitalWrite(MS1_PIN, HIGH);
-        digitalWrite(MS2_PIN, LOW);
-        digitalWrite(MS3_PIN, LOW);
-        break;
-      case 4:  // Quarter step
-        digitalWrite(MS1_PIN, LOW);
-        digitalWrite(MS2_PIN, HIGH);
-        digitalWrite(MS3_PIN, LOW);
-        break;
-      case 8:  // Eighth step
-        digitalWrite(MS1_PIN, HIGH);
-        digitalWrite(MS2_PIN, HIGH);
-        digitalWrite(MS3_PIN, LOW);
-        break;
-      case 16: // Sixteenth step
-        digitalWrite(MS1_PIN, HIGH);
-        digitalWrite(MS2_PIN, HIGH);
-        digitalWrite(MS3_PIN, HIGH);
-        break;
-    }
-    logEvent("MICROSTEPPING", String("Configurado para " + String(mode) + " step").c_str());
-  #endif
-  */
-  
-  // Por enquanto, apenas log informativo
-  logEvent("MICROSTEPPING", "Conecte MS1,MS2,MS3 ao GND para full step");
 }
