@@ -1,43 +1,65 @@
-# 🐕 Alimentador Pet Automático com ESP8266
+# 🐾 Alimentador Pet Automático v4.1
 
-Um sistema completo de alimentação automática para pets baseado em ESP8266, com interface web moderna, sistema de calibração por gramas e controle anti-travamento.
+Sistema auto- 📊 **Estatísticas Completas** - Histórico de alimentações e consumoát### 🆕 **Novidades da v4.1**co de alimentação para pets com controle via web, baseado em ESP8266 e motor NEMA 17 com driver A4988.
 
 ![Version](https://img.shields.io/badge/version-4.1-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-ESP8266-orange.svg)
+![Motor](https://img.shields.io/badge/motor-NEMA17-red.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ## 📋 Índice
 
 - [Características](#-características)
 - [Hardware Necessário](#-hardware-necessário)
-- [Esquema de Ligação](#-esquema-de-ligação)
+- [Conexões Físicas](#-conexões-físicas)
 - [Instalação](#-instalação)
 - [Configuração](#-configuração)
 - [Interface Web](#-interface-web)
-- [Funcionalidades](#-funcionalidades)
-- [API Endpoints](#-api-endpoints)
-- [Troubleshooting](#-troubleshooting)
+- [Calibração](#-calibração)
+- [Solução de Problemas](#-solução-de-problemas)
+- [Especificações Técnicas](#-especificações-técnicas)
 - [Contribuição](#-contribuição)
-- [Licença](#-licença)
+- [Licença](#-licença)Automático v4.1
+
+Sistema automático de alimentação para pets com controle via web, baseado em ESP8266 e motor NEMA 17 com driver A4988.
+
+![Version](https://img.shields.io/badge/version-4.1-blue.svg)
+![Platform](https://img.shields.io/badge/platform-ESP8266-orange.svg)
+![Motor](https://img.shields.io/badge/motor-NEMA17-red.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+## 📋 Índice
+
+- [Características](#-características)
+- [Hardware Necessário](#-hardware-necessário)
+- [Conexões Físicas](#-conexões-físicas)
+- [Instalação](#-instalação)
+- [Configuração](#-configuração)
+- [Interface Web](#-interface-web)
+- [Calibração](#-calibração)
+- [Solução de Problemas](#-solução-de-problemas)
+- [Especificações Técnicas](#-especificações-técnicas)
 
 ## 🌟 Características
 
-### ✨ Principais Funcionalidades
-- 🎯 **Sistema baseado em gramas** - Controle preciso da quantidade dispensada
-- ⚖️ **Calibração automática** - Ajuste fino para diferentes tipos de ração
-- 🕐 **Programação de horários** - Até 4 horários configuráveis por dia
-- 📱 **Interface web moderna** - Controle total via navegador
-- 🔄 **Sistema anti-travamento** - Reversão automática para evitar entupimentos
-- 📊 **Estatísticas detalhadas** - Acompanhe o consumo do seu pet
-- 📶 **Conectividade WiFi** - Controle remoto e monitoramento
-- 🛡️ **Sistema robusto** - Reconexão automática e tratamento de erros
+### ✨ **Principais Funcionalidades**
+- 🎯 **Controle Preciso por Passos** - Dispensação exata de ração (frações de rotação)
+- 📱 **Interface Web Responsiva** - Controle completo via navegador
+- ⏰ **Programação de Horários** - Até 4 horários automáticos por dia
+- 🔄 **Sistema Anti-Travamento** - Reversão automática para evitar entupimentos
+- ⚖️ **Calibração por Gramas** - Configuração precisa da quantidade por rotação
+- 📺 **Display OLED** - Informações em tempo real no dispositivo
+- 📶 **Conexão WiFi** - Controle remoto e monitoramento
+- � **Estatísticas Completas** - Histórico de alimentações e consumo
+- 💾 **Backup de Configuração** - Dados salvos na EEPROM com checksum
 
-### 🔧 Características Técnicas
-- **Display OLED** - Informações em tempo real
-- **Motor de passo** - Precisão na dispensação
-- **Armazenamento EEPROM** - Configurações persistem após reinicialização
-- **Interface responsiva** - Funciona em desktop e mobile
-- **Logs estruturados** - Monitoramento via Serial Monitor
+### � **Novidades da v4.1**
+- ✅ **Motor NEMA 17** - Maior precisão e torque
+- ✅ **Driver A4988** - Controle direto STEP/DIR/ENABLE
+- ✅ **Controle por Passos** - Frações de rotação (1/2, 1/4, 3/4, etc.)
+- ✅ **Precisão Máxima** - Dispensação exata sem desperdício
+- ✅ **Interface Melhorada** - Progresso visual em tempo real
+- ✅ **Diagnósticos** - Testes de hardware integrados
 
 ## 🔌 Hardware Necessário
 
@@ -45,139 +67,144 @@ Um sistema completo de alimentação automática para pets baseado em ESP8266, c
 |------------|-----------|------------|
 | **ESP8266** | NodeMCU v3 ou Wemos D1 Mini | 1x |
 | **Display OLED** | SSD1306 128x64 I2C | 1x |
-| **Motor de Passo** | 28BYJ-48 5V | 1x |
-| **Driver Motor** | ULN2003 | 1x |
+| **Motor NEMA 17** | Motor de passo 200 passos/revolução | 1x |
+| **Driver A4988** | Driver para motor NEMA 17 | 1x |
 | **Rosca sem fim** | Para dispensar ração | 1x |
-| **Fonte 5V** | Para alimentar o motor | 1x |
-| **Jumpers** | Para conexões | Vários |
-| **Protoboard/PCB** | Para montagem | 1x |
+| **Fonte 12V** | Alimentação para motor (5V-12V) | 1x |
+| **Resistores 10kΩ** | Pull-down para MS1,MS2,MS3 (opcional) | 3x |
+| **Capacitor 100μF** | Filtragem da fonte (recomendado) | 1x |
 
-## 🔗 Esquema de Ligação
+## 🔌 Conexões Físicas
 
-### ESP8266 → Display OLED (SSD1306)
+### **ESP8266 → A4988**
 ```
-ESP8266    →    OLED
-GPIO12     →    SDA
-GPIO14     →    SCL
-3.3V       →    VCC
-GND        →    GND
-```
-
-### ESP8266 → Driver ULN2003 → Motor 28BYJ-48
-```
-ESP8266    →    ULN2003
-GPIO5      →    IN1
-GPIO4      →    IN2
-GPIO0      →    IN3
-GPIO2      →    IN4
-GPIO16     →    ENABLE
-5V         →    VCC
-GND        →    GND
+GPIO 5  → STEP    (Controle de passos)
+GPIO 4  → DIR     (Controle de direção)
+GPIO 16 → ENABLE  (Liga/desliga motor)
+VCC     → VCC     (3.3V)
+GND     → GND     (Terra)
 ```
 
-### Diagrama de Conexão
+### **A4988 → NEMA 17**
 ```
-                ESP8266 NodeMCU
-                ┌─────────────┐
-     Display    │             │    Motor Driver
-     OLED       │   GPIO12    │      ULN2003
-   ┌──────┐     │   GPIO14    │    ┌─────────┐
-   │ SDA  │◄────┤   3.3V      │    │   IN1   │◄─── GPIO5
-   │ SCL  │◄────┤   GND       │    │   IN2   │◄─── GPIO4
-   │ VCC  │◄────┤             │    │   IN3   │◄─── GPIO0
-   │ GND  │◄────┤   GPIO16    ├────┤ ENABLE  │◄─── GPIO2
-   └──────┘     │   5V        ├────┤   VCC   │
-                │   GND       ├────┤   GND   │
-                └─────────────┘    └─────────┘
-                                        │
-                                  Motor 28BYJ-48
-                                   ┌─────────┐
-                                   │ Stepper │
-                                   │  Motor  │
-                                   └─────────┘
+A+/A- → Bobina A do motor
+B+/B- → Bobina B do motor
+VDD   → 3.3V (lógica)
+VMOT  → 12V (motor)
+GND   → GND comum
 ```
 
-## 📥 Instalação
-
-### 1. Arduino IDE
-```bash
-# Instale as bibliotecas necessárias:
-# - ESP8266WiFi
-# - ESP8266WebServer
-# - Adafruit GFX Library
-# - Adafruit SSD1306
-# - Stepper
-# - NTPClient
-# - EEPROM
+### **Configuração A4988 (OBRIGATÓRIO!)**
+Para **FULL STEP** (200 passos/revolução):
+```
+MS1 → GND (ou resistor 10kΩ → GND)
+MS2 → GND (ou resistor 10kΩ → GND)
+MS3 → GND (ou resistor 10kΩ → GND)
 ```
 
-### 2. Configuração do WiFi
+### **Display OLED I2C**
+```
+ESP8266 → OLED
+GPIO 12 → SDA
+GPIO 14 → SCL
+VCC     → 3.3V
+GND     → GND
+```
+
+### **Diagrama de Conexão**
+```
+    ┌─────────────────┐
+    │     A4988       │
+    │                 │
+ESP │ GPIO5  ──→ STEP │
+826 │ GPIO4  ──→ DIR  │
+6   │ GPIO16 ──→ EN   │
+    │                 │         ┌──────────┐
+    │ MS1 ──→ GND     │ ←──────→ │ NEMA 17  │
+    │ MS2 ──→ GND     │ 12V      │  Motor   │
+    │ MS3 ──→ GND     │         └──────────┘
+    └─────────────────┘
+          ↑ 12V
+    ┌─────────────┐
+    │ Fonte 12V   │
+    └─────────────┘
+```
+
+## 💻 Instalação
+
+### **1. Bibliotecas Necessárias**
+Instale via Arduino IDE Library Manager:
+```
+- ESP8266WiFi (incluída no core ESP8266)
+- ESP8266WebServer (incluída no core ESP8266)
+- Adafruit GFX Library
+- Adafruit SSD1306
+- NTPClient
+- WiFiUdp (incluída no core ESP8266)
+- EEPROM (incluída no core ESP8266)
+```
+
+### **2. Configuração WiFi**
+Edite no código:
 ```cpp
-// Edite no código antes de fazer upload:
-const char* ssid = "SEU_WIFI_AQUI";
-const char* password = "SUA_SENHA_AQUI";
+const char* ssid = "SEU_WIFI";
+const char* password = "SUA_SENHA";
 ```
 
-### 3. Upload do Código
-1. Conecte o ESP8266 via USB
-2. Selecione a placa correta em `Tools > Board > ESP8266 Boards`
-3. Escolha a porta COM correta
-4. Clique em Upload
+### **3. Upload do Código**
+1. Selecione a placa: **NodeMCU 1.0 (ESP-12E Module)**
+2. Configure a velocidade: **115200 baud**
+3. Faça o upload do arquivo `alimentador_pet.ino`
 
-### 4. Primeira Configuração
-1. Abra o Serial Monitor (115200 baud)
-2. Anote o IP exibido após conectar ao WiFi
-3. Acesse o IP no navegador
+### **4. Primeira Configuração**
+1. Conecte-se ao WiFi configurado
+2. Acesse o IP do dispositivo no navegador
+3. Execute a calibração inicial
+4. Configure os horários de alimentação
 
 ## ⚙️ Configuração
 
-### 📡 Configuração Inicial
-1. **WiFi**: Configure suas credenciais no código
-2. **Calibração**: Primeira execução requer calibração do sistema
-3. **Horários**: Configure os horários de alimentação
-4. **Meta Diária**: Defina a quantidade total de ração por dia
+### **Configurações Padrão**
+- **Velocidade Motor:** 100 RPM
+- **Calibração Inicial:** 15g/rotação
+- **Gramas por dia:** 300g
+- **Períodos por dia:** 3 (manhã, tarde, noite)
+- **Sistema anti-travamento:** Ativo
 
-### 🎯 Processo de Calibração
-1. Acesse `/calibrate` na interface web
-2. Coloque um recipiente na saída
-3. Dispense 3-5 rotações para teste
-4. Pese a ração dispensada
-5. Digite o peso medido e salve
+### **Horários Padrão (3 períodos)**
+- **07:00** - 100g
+- **13:00** - 100g  
+- **19:00** - 100g
 
-## 📱 Interface Web
+## 🎮 Interface Web
 
-### 🏠 Dashboard Principal (`/`)
-- **Status em tempo real** do sistema
-- **Controles de alimentação** (25g, 50g, 100g)
-- **Informações de calibração** e estatísticas
-- **Status do motor** e conexão WiFi
-- **Horários programados**
+### **Dashboard Principal**
+- **Status do Sistema** - Estado atual e próxima alimentação
+- **Controle Manual** - Botões para teste e alimentação imediata
+- **Monitoramento** - Progresso em tempo real durante alimentação
+- **Diagnósticos** - Testes de hardware integrados
 
-### ⚙️ Configurações (`/config`)
-- **Estatísticas de uso** detalhadas
-- **Informações de calibração**
-- **Sistema anti-travamento**
-- **Configuração de meta diária**
-- **Visualização de horários**
+### **Funcionalidades Disponíveis**
+| Função | Descrição |
+|--------|-----------|
+| 🍽️ Alimentar | Dispensação manual (25g, 50g, 100g) |
+| 🔧 Teste | Teste de funcionamento do motor |
+| 🔌 Test ENABLE | Diagnóstico do pino ENABLE |
+| ↩️ Reverter | Rotação reversa para desentupir |
+| ⚖️ Calibrar | Calibração da quantidade por rotação |
+| ⚡ Motor On/Off | Controle manual do motor |
+| 📊 Estatísticas | Histórico de alimentações |
+| ⏰ Programar | Configuração de horários automáticos |
+| 🔄 Reset | Reset de configurações |
 
-### ⏰ Horários (`/schedule`)
-- **Interface moderna** para configurar horários
-- **Toggle switches** para ativar/desativar
-- **Seleção de hora e minuto**
-- **Configuração de gramas** por horário
-- **Validação em tempo real**
-
-### ⚖️ Calibração (`/calibrate`)
-- **Processo step-by-step** de calibração
-- **Dispensação para teste**
-- **Cálculo automático** da calibração
-- **Dicas para calibração precisa**
-
-### 🔄 Reset (`/reset`)
-- **Reset de estatísticas** apenas
-- **Reinicialização completa** do sistema
-- **Confirmações de segurança**
-- **Preservação de configurações**
+### **URLs de Acesso**
+```
+http://[IP_DO_ESP]/          - Dashboard principal
+http://[IP_DO_ESP]/status    - Status em JSON
+http://[IP_DO_ESP]/calibrate - Calibração
+http://[IP_DO_ESP]/schedule  - Programação de horários
+http://[IP_DO_ESP]/test_enable - Teste do pino ENABLE
+```
 
 ## 🚀 Funcionalidades
 
@@ -244,75 +271,123 @@ GET /reset_stats        # Resetar estatísticas
 GET /reset_system       # Reiniciar sistema
 ```
 
-## 🔍 Troubleshooting
+## ⚖️ Calibração
 
-### ❌ Problemas Comuns
+### **Processo de Calibração**
+1. Acesse `/calibrate` na interface web
+2. Coloque um recipiente sob o dispensador
+3. Execute uma rotação completa (200 passos)
+4. Pese a ração dispensada com precisão
+5. Insira o valor medido na interface
+6. Sistema calcula automaticamente a precisão por passo
 
-#### WiFi não conecta
+### **Exemplo de Calibração**
+```
+1. Motor executa 200 passos (1 rotação completa)
+2. Ração dispensada: 46g
+3. Sistema salva: 46g/rotação = 0.23g/passo
+4. Precisão final: ±0.23g por passo individual
+```
+
+### **Sistema de Precisão**
+```
+Calibração: 46g/rotação
+Precisão por passo: 46g ÷ 200 = 0.23g/passo
+
+Exemplo de solicitação: 25g
+Cálculo: 25g ÷ 0.23g/passo = 109 passos
+Resultado: 109 passos = 25.07g (erro de apenas 0.07g!)
+```
+
+## 🛠️ Solução de Problemas
+
+### **Motor não funciona**
+1. ✅ Verifique conexões STEP, DIR, ENABLE
+2. ✅ **Confirme que MS1, MS2, MS3 estão conectados ao GND**
+3. ✅ Teste o pino ENABLE via `/test_enable`
+4. ✅ Verifique alimentação 12V do A4988
+5. ✅ Confirme que o motor não está travado mecanicamente
+
+### **Motor só funciona quando toco nos pinos MS**
+🎯 **CAUSA:** Pinos MS1, MS2, MS3 estão flutuando!
+✅ **SOLUÇÃO:** Conecte MS1, MS2, MS3 diretamente ao GND ou use resistores pull-down de 10kΩ
+
+### **Imprecisão na dispensação**
+1. ✅ Execute nova calibração com balança precisa (0.1g)
+2. ✅ Verifique se a rosca não está entupida
+3. ✅ Confirme que o motor não está perdendo passos
+4. ✅ Ajuste a velocidade se houver perda de passos
+
+### **Problemas de WiFi**
 ```
 Verificações:
 ✓ SSID e senha corretos no código
 ✓ Rede 2.4GHz (ESP8266 não suporta 5GHz)
-✓ Sinal WiFi suficiente
-✓ Reset do ESP8266
+✓ Sinal WiFi suficiente no local
+✓ Reset do ESP8266 se necessário
 ```
 
-#### Motor não gira
-```
-Verificações:
-✓ Conexões do ULN2003
-✓ Alimentação 5V do motor
-✓ Enable pin (GPIO16) conectado
-✓ Código do motor correto
-```
-
-#### Display não funciona
+### **Display não funciona**
 ```
 Verificações:
 ✓ Endereço I2C correto (0x3C)
-✓ Conexões SDA/SCL
-✓ Alimentação 3.3V
-✓ Biblioteca Adafruit_SSD1306
+✓ Conexões SDA (GPIO12) / SCL (GPIO14)
+✓ Alimentação 3.3V estável
+✓ Biblioteca Adafruit_SSD1306 instalada
 ```
 
-#### Calibração imprecisa
-```
-Soluções:
-✓ Use balança precisa (0.1g)
-✓ Ração seca e limpa
-✓ Múltiplas calibrações
-✓ Rosca sem fim limpa
-```
+### **Diagnósticos Integrados**
+- **`/test_enable`** - Testa funcionamento do pino ENABLE
+- **Monitor Serial (115200 baud)** - Logs detalhados do sistema
+- **Interface web** - Status em tempo real de todos os componentes
 
-### 🔧 Debug
-```cpp
-// Monitor Serial (115200 baud) mostra:
-[timestamp] EVENT: details
-[12345] SYSTEM_START: Alimentador Pet v4.1
-[12678] WIFI_CONNECTED: 192.168.1.100
-[15234] FEEDING_START: Iniciando 50g (5 rot)
-[18456] FEEDING_COMPLETE: Dispensado: 50.0g
-```
+## 📊 Especificações Técnicas
 
-## 📈 Especificações
+| Item | Especificação |
+|------|---------------|
+| **Microcontrolador** | ESP8266 NodeMCU |
+| **Motor** | NEMA 17, 200 passos/revolução |
+| **Driver** | A4988, Full Step |
+| **Display** | OLED 128x64, I2C |
+| **Precisão** | ±0.23g (com calibração 46g/rot) |
+| **Velocidade** | 100 RPM (configurável) |
+| **Alimentação Motor** | 5V-12V |
+| **Alimentação Lógica** | 3.3V |
+| **Conectividade** | WiFi 2.4GHz |
+| **Armazenamento** | EEPROM 512 bytes |
+| **Interface** | Web responsiva |
+| **Controle** | Passos individuais |
 
-### Performance
-- **Precisão**: ±0.5g (com calibração)
-- **Velocidade**: ~10g por rotação (configurável)
-- **Capacidade**: Limitada pelo recipiente
-- **Autonomia**: Depende da fonte de energia
+### **Performance**
+- **Precisão máxima**: ±1 passo = ±(gramas_por_rotação/200)
+- **Frações de rotação**: 1/2, 1/4, 3/4, etc.
+- **Velocidade dispensação**: Configurável (50-200 RPM)
+- **Capacidade**: Limitada pelo recipiente de ração
+- **Autonomia**: Contínua com alimentação externa
 
-### Conectividade
+### **Conectividade**
 - **WiFi**: 802.11 b/g/n 2.4GHz
 - **Interface**: HTTP/HTML responsiva
 - **Protocolos**: TCP/IP, HTTP, NTP
 - **Reconexão**: Automática a cada 30s
 
-### Armazenamento
+### **Armazenamento**
 - **EEPROM**: 512 bytes para configurações
 - **Backup**: Configurações persistem sem energia
 - **Reset**: Opções de reset seletivo
 - **Integridade**: Checksum de validação
+
+### **Comparação v4.0 → v4.1**
+| Aspecto | v4.0 (28BYJ-48) | v4.1 (NEMA 17) |
+|---------|-----------------|----------------|
+| **Precisão** | ±2g | ±0.23g |
+| **Torque** | Baixo | Alto |
+| **Velocidade** | 12 RPM | 100 RPM |
+| **Controle** | Rotações completas | Passos individuais |
+| **Frações** | ❌ | ✅ |
+| **Confiabilidade** | Boa | Excelente |
+
+---
 
 ## 🤝 Contribuição
 
@@ -347,7 +422,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 ## 👨‍💻 Autor
 
-**Guilherme Devito** - [GitHub](https://github.com/Devito552)
+**Guilherme Devito** - [Devito](https://github.com/Devito552)
 
 ## 🙏 Agradecimentos
 
@@ -364,9 +439,12 @@ Se você encontrar problemas ou tiver sugestões:
 
 1. **Issues**: Use as [GitHub Issues](https://github.com/Devito552/automatic_dog_feeder_iot/issues)
 2. **Documentação**: Consulte este README
+3. **Comunidade**: Participe das discussões
 
 ---
 
 **⭐ Se este projeto foi útil, considere dar uma estrela no GitHub!**
 
-*Alimentador Pet v4.1 - Tecnologia a serviço do bem-estar animal* 🐾
+**Desenvolvido com ❤️ para nossos amigos de quatro patas!** 🐕🐱
+
+*Alimentador Pet v4.1 - Motor NEMA 17 + Driver A4988 - Controle Preciso por Passos*
