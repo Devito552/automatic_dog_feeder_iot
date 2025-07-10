@@ -3,13 +3,12 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Stepper.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <EEPROM.h>
 
 // Configurações do sistema
-#define VERSION "4.0"
+#define VERSION "4.1"
 #define EEPROM_SIZE 512
 #define CONFIG_ADDRESS 0
 
@@ -21,25 +20,25 @@
 #define SDA_PIN 12
 #define SCL_PIN 14
 
-// Configurações do Motor de Passo 28BYJ-48 com driver ULN2003
-#define IN1_PIN 5
-#define IN2_PIN 4
-#define IN3_PIN 0
-#define IN4_PIN 2
-#define ENABLE_PIN 16  // GPIO16 = Pino D0 - para controlar o ENABLE do driver ULN2003
+// Configurações do Motor de Passo NEMA 17 com driver A4988
+#define STEP_PIN 5     // Pino STEP - controla os passos
+#define DIR_PIN 4      // Pino DIR - controla direção
+#define ENABLE_PIN 16  // Pino ENABLE - liga/desliga o driver (LOW = ligado, HIGH = desligado)
+
 
 // Configurações do motor
-const int STEPS_PER_MOTOR_REVOLUTION = 2048;
-const int STEPS_PER_AUGER_ROTATION = STEPS_PER_MOTOR_REVOLUTION;
-const int STEPS_PER_CHUNK = 64; // Dividir em pedaços menores para evitar timeout
+const int STEPS_PER_MOTOR_REVOLUTION = 200; // NEMA 17 padrão: 200 passos por revolução (1.8° por passo)
+const int MICROSTEPS = 1; // Full step (sem microstepping)
+const int TOTAL_STEPS_PER_REVOLUTION = STEPS_PER_MOTOR_REVOLUTION * MICROSTEPS; // 200 passos full step
+const int STEPS_PER_AUGER_ROTATION = TOTAL_STEPS_PER_REVOLUTION;
+const int STEPS_PER_CHUNK = 50; // Dividir em pedaços menores para evitar timeout
 
 // Configurações WiFi
-const char* ssid = "SEU_WIFI";
-const char* password = "SUA_SENHA";
+const char* ssid = "INTERNET WAY DEVITO";
+const char* password = "devito3452";
 
 // Objetos
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Stepper stepperMotor(STEPS_PER_MOTOR_REVOLUTION, IN1_PIN, IN3_PIN, IN2_PIN, IN4_PIN);
 ESP8266WebServer server(80);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", -3 * 3600, 60000);
@@ -86,20 +85,26 @@ int displayMode = 0;
 bool isStepperMoving = false;
 
 // Variáveis para controle não-bloqueante do motor
-int pendingRotations = 0;
-int currentRotation = 0;
+int pendingRotations = 0; // Mantido para compatibilidade com displays
+int currentRotation = 0;  // Mantido para compatibilidade com displays
 int stepsRemaining = 0;
 bool feedingInProgress = false;
 unsigned long lastStepTime = 0;
-const unsigned long STEP_DELAY = 3; // Delay entre passos em ms
+const unsigned long STEP_DELAY_US = 2000; // Delay entre passos em microssegundos (2ms para full step)
 bool motorEnabled = false; // Estado do driver do motor
+bool motorDirection = true; // true = horário, false = anti-horário
+
+// Novas variáveis para controle preciso por passos
+int totalStepsRequested = 0; // Total de passos solicitados para a alimentação
+int stepsCompleted = 0;      // Passos já executados
+float gramsRequested = 0;    // Gramas solicitados (valor exato)
 
 // Variáveis para sistema anti-travamento
 float gramsDispensedCurrent = 0; // Gramas dispensadas na alimentação atual
 float lastReverseGrams = 0; // Última posição onde fez reversão
 const float REVERSE_INTERVAL_GRAMS = 5.0; // A cada 5g faz reversão
-const int REVERSE_STEPS = 300; // Passos para reverter (pequena reversão anti-travamento)
-const int FINAL_REVERSE_STEPS = 600; // Passos para reversão final (maior para parar gotejamento)
+const int REVERSE_STEPS = 20; // Passos para reverter (ajustado para full step)
+const int FINAL_REVERSE_STEPS = 100; // Passos para reversão final (ajustado para full step)
 bool needsReverse = false; // Flag para indicar que precisa fazer reversão
 
 // Variáveis para reconexão WiFi
@@ -139,10 +144,13 @@ void setup() {
     for(;;);
   }
 
-  // Inicializa motor de passo
+  // Inicializa pinos do motor A4988
+  pinMode(STEP_PIN, OUTPUT);
+  pinMode(DIR_PIN, OUTPUT);
   pinMode(ENABLE_PIN, OUTPUT);
+  digitalWrite(STEP_PIN, LOW);
+  digitalWrite(DIR_PIN, LOW);
   disableMotor(); // Inicia com motor desligado
-  stepperMotor.setSpeed(config.motorSpeed);
   delay(1000);
 
   // Tela inicial
@@ -156,6 +164,9 @@ void setup() {
 
   // Configura servidor web
   setupWebServer();
+  
+  // Configuração de microstepping (informativo)
+  setMicrostepping(1); // Full step
 
   displayReady();
   logEvent("SYSTEM_READY", "Sistema inicializado com sucesso");
@@ -238,22 +249,50 @@ void checkWiFiConnection() {
 
 // Funções para controle do motor
 void enableMotor() {
-  digitalWrite(ENABLE_PIN, LOW);  // ULN2003 ativa com nível baixo
+  digitalWrite(ENABLE_PIN, LOW);  // A4988 ativa com nível baixo
   motorEnabled = true;
-  logEvent("MOTOR_ENABLED", "Driver ligado");
+  logEvent("MOTOR_ENABLED", "Driver A4988 ligado");
   delay(100); // Pequeno delay para estabilizar
 }
 
 void disableMotor() {
-  digitalWrite(ENABLE_PIN, HIGH); // ULN2003 desativa com nível alto
+  digitalWrite(ENABLE_PIN, HIGH); // A4988 desativa com nível alto
   motorEnabled = false;
-  logEvent("MOTOR_DISABLED", "Driver desligado");
+  logEvent("MOTOR_DISABLED", "Driver A4988 desligado");
+}
+
+// Função para executar um único passo
+void stepMotor() {
+  digitalWrite(STEP_PIN, HIGH);
+  delayMicroseconds(10); // Pulso mais longo para full step
+  digitalWrite(STEP_PIN, LOW);
+  delayMicroseconds(10);
+}
+
+// Função para definir direção do motor
+void setMotorDirection(bool clockwise) {
+  motorDirection = clockwise;
+  digitalWrite(DIR_PIN, clockwise ? HIGH : LOW);
+  delayMicroseconds(5); // Delay para estabilizar sinal de direção
+}
+
+// Função para executar múltiplos passos
+void stepMotorMultiple(int steps, bool clockwise) {
+  if (steps <= 0) return;
   
-  // Desliga todos os pinos do motor para economizar energia
-  digitalWrite(IN1_PIN, LOW);
-  digitalWrite(IN2_PIN, LOW);
-  digitalWrite(IN3_PIN, LOW);
-  digitalWrite(IN4_PIN, LOW);
+  setMotorDirection(clockwise);
+  unsigned long stepDelay = calculateStepDelay();
+  
+  for (int i = 0; i < steps; i++) {
+    stepMotor();
+    delayMicroseconds(stepDelay);
+    
+    // Permite processamento de outras tarefas a cada alguns passos
+    if (i % 25 == 0) { // Reduzido para full step
+      server.handleClient();
+      yield();
+    }
+  }
 }
 
 void processStepperMotor() {
@@ -267,17 +306,27 @@ void processStepperMotor() {
   }
   
   if (stepsRemaining > 0) {
-    if (millis() - lastStepTime >= STEP_DELAY) {
+    unsigned long stepDelay = calculateStepDelay();
+    if (micros() - lastStepTime >= stepDelay) {
       // Executa apenas alguns passos por vez
       int stepsToTake = min(stepsRemaining, STEPS_PER_CHUNK);
-      stepperMotor.step(stepsToTake);
-      stepsRemaining -= stepsToTake;
-      lastStepTime = millis();
       
-      // Atualiza gramas dispensadas e verifica se precisa reverter
-      float stepsProgress = STEPS_PER_AUGER_ROTATION - stepsRemaining;
-      float rotationProgress = (float)stepsProgress / STEPS_PER_AUGER_ROTATION;
-      gramsDispensedCurrent = (currentRotation + rotationProgress) * config.gramsPerRotation;
+      // Executa os passos usando controle direto A4988
+      setMotorDirection(true); // Direção horária para alimentação
+      for (int i = 0; i < stepsToTake; i++) {
+        stepMotor();
+        delayMicroseconds(stepDelay);
+      }
+      
+      stepsRemaining -= stepsToTake;
+      stepsCompleted += stepsToTake; // NOVO: Conta passos executados
+      lastStepTime = micros();
+      
+      // NOVO: Atualiza gramas dispensadas baseado nos passos reais
+      gramsDispensedCurrent = calculateGramsForSteps(stepsCompleted);
+      
+      // Atualiza rotação atual para compatibilidade com displays
+      currentRotation = stepsCompleted / TOTAL_STEPS_PER_REVOLUTION;
       
       // Verifica se precisa fazer reversão anti-travamento
       if (gramsDispensedCurrent - lastReverseGrams >= REVERSE_INTERVAL_GRAMS) {
@@ -290,28 +339,23 @@ void processStepperMotor() {
       yield();
     }
   } else {
-    // Rotação atual concluída
-    currentRotation++;
-    totalRotations++;
-    
-    if (currentRotation >= pendingRotations) {
-      // Todas as rotações concluídas
-      finishFeeding();
-    } else {
-      // Inicia próxima rotação
-      stepsRemaining = STEPS_PER_AUGER_ROTATION;
-      delay(200); // Pequena pausa entre rotações
-    }
+    // NOVO: Alimentação concluída quando todos os passos foram executados
+    finishFeeding(); // Simplificado - não precisa mais do controle de rotações
   }
 }
 
 void startFeeding(int grams) {
   if (feedingInProgress) return; // Evita sobreposição
   
-  int rotationsNeeded = calculateRotationsForGrams(grams);
-  float actualGrams = calculateGramsForRotations(rotationsNeeded);
+  // NOVO: Cálculo preciso por passos
+  gramsRequested = grams;
+  totalStepsRequested = calculateStepsForGrams(grams);
+  float actualGrams = calculateGramsForSteps(totalStepsRequested);
   
-  logEvent("FEEDING_START", String("Iniciando " + String(grams) + "g (" + String(rotationsNeeded) + " rot)").c_str());
+  // Mantém compatibilidade para displays (calcula rotações equivalentes)
+  pendingRotations = (totalStepsRequested + TOTAL_STEPS_PER_REVOLUTION - 1) / TOTAL_STEPS_PER_REVOLUTION;
+  
+  logEvent("FEEDING_START", String("Iniciando " + String(grams) + "g (precisão: " + String(actualGrams, 2) + "g, " + String(totalStepsRequested) + " passos)").c_str());
   
   // Liga o motor antes de iniciar
   enableMotor();
@@ -321,9 +365,10 @@ void startFeeding(int grams) {
   lastReverseGrams = 0;
   needsReverse = false;
   
-  pendingRotations = rotationsNeeded;
+  // NOVO: Controle por passos
+  stepsCompleted = 0;
   currentRotation = 0;
-  stepsRemaining = STEPS_PER_AUGER_ROTATION;
+  stepsRemaining = totalStepsRequested; // Agora usa o total exato de passos
   feedingInProgress = true;
   isStepperMoving = true;
   
@@ -337,18 +382,23 @@ void finishFeeding() {
   
   // Executa reversão final para evitar ração caindo
   logEvent("FINAL_REVERSE", "Reversão final para parar gotejamento");
-  stepperMotor.step(-FINAL_REVERSE_STEPS);
+  stepMotorMultiple(FINAL_REVERSE_STEPS, false); // false = anti-horário
   delay(200); // Pausa para garantir que pare completamente
   
   // Desliga o motor após completar a alimentação
   disableMotor();
   
   totalFeedings++;
-  float gramsDispensed = calculateGramsForRotations(pendingRotations);
+  // NOVO: Usa o cálculo preciso por passos
+  float gramsDispensed = calculateGramsForSteps(stepsCompleted);
   totalGramsDispensed += gramsDispensed;
+  
+  // Atualiza contador de rotações para estatísticas
+  totalRotations += (stepsCompleted + TOTAL_STEPS_PER_REVOLUTION - 1) / TOTAL_STEPS_PER_REVOLUTION;
+  
   saveConfig(); // Salva estatísticas
   
-  logEvent("FEEDING_COMPLETE", String("Dispensado: " + String(gramsDispensed, 1) + "g. Total: " + String(totalFeedings) + " alimentações").c_str());
+  logEvent("FEEDING_COMPLETE", String("Dispensado: " + String(gramsDispensed, 2) + "g (solicitado: " + String(gramsRequested, 0) + "g). Total: " + String(totalFeedings) + " alimentações").c_str());
   
   // Mostra confirmação no display
   display.clearDisplay();
@@ -356,13 +406,22 @@ void finishFeeding() {
   display.setCursor(20,2);
   display.print("CONCLUIDO!");
   
-  display.setCursor(8,18);
+  display.setCursor(5,15);
+  display.print("Solicitado: ");
+  display.print(gramsRequested, 0);
+  display.print("g");
+  
+  display.setCursor(5,25);
   display.print("Dispensado: ");
   display.print(gramsDispensed, 1);
   display.print("g");
   
-  display.setCursor(20,30);
-  display.print("Pet alimentado!");
+  // Mostra precisão
+  float accuracy = (gramsDispensed / gramsRequested) * 100;
+  display.setCursor(5,35);
+  display.print("Precisao: ");
+  display.print(accuracy, 0);
+  display.print("%");
   
   // Desenha um smile
   display.drawCircle(64, 50, 8, SSD1306_WHITE);
@@ -373,7 +432,12 @@ void finishFeeding() {
   display.display();
   
   delay(3000);
+  
+  // Limpa variáveis de controle
   pendingRotations = 0;
+  totalStepsRequested = 0;
+  stepsCompleted = 0;
+  gramsRequested = 0;
 }
 
 void updateFeedingDisplay() {
@@ -384,10 +448,10 @@ void updateFeedingDisplay() {
   display.setCursor(20,2);
   display.print("ALIMENTANDO");
   
-  float targetGrams = calculateGramsForRotations(pendingRotations);
+  // NOVO: Mostra valores precisos
   display.setCursor(20,18);
-  display.print("Qtd: ");
-  display.print(targetGrams, 1);
+  display.print("Meta: ");
+  display.print(gramsRequested, 1);
   display.print("g");
   
   display.setCursor(10,28);
@@ -395,15 +459,14 @@ void updateFeedingDisplay() {
   display.print(gramsDispensedCurrent, 1);
   display.print("g");
   
-  display.setCursor(20,38);
-  display.print("Rotacao: ");
-  display.print(currentRotation + 1);
-  display.print("/");
-  display.print(pendingRotations);
+  display.setCursor(5,38);
+  display.print("Progresso: ");
+  float progressPercent = (stepsCompleted * 100.0) / totalStepsRequested;
+  display.print(progressPercent, 0);
+  display.print("%");
   
   // Barra de progresso
-  int progressPercent = (int)((gramsDispensedCurrent / targetGrams) * 100);
-  int progressBar = (progressPercent * 120) / 100;
+  int progressBar = (int)((progressPercent * 120) / 100);
   progressBar = min(120, max(0, progressBar)); // Limita entre 0 e 120
   
   display.drawRect(4, 48, 120, 8, SSD1306_WHITE);
@@ -768,6 +831,7 @@ void setupWebServer() {
   server.on("/reset", handleReset);
   server.on("/reset_stats", handleResetStats);
   server.on("/reset_system", handleResetSystem);
+  server.on("/confirm_reset", handleConfirmReset);
   server.on("/calibrate", handleCalibrate);
   server.on("/set_calibration", handleSetCalibration);
   server.on("/set_daily", handleSetDaily);
@@ -815,7 +879,7 @@ void handleRoot() {
   html += "<div class='stats'>";
   html += "<p><strong>⏰ Hora atual:</strong> " + timeClient.getFormattedTime() + "</p>";
   html += "<p><strong>🍽️ Total de alimentações:</strong> " + String(totalFeedings) + "</p>";
-  html += "<p><strong>⚖️ Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
+  html += "<p><strong>📦 Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
   html += "<p><strong>🎯 Meta diária:</strong> " + String(config.dailyGramsTotal) + "g (" + String(config.periodsPerDay) + " refeições)</p>";
   html += "<p><strong>📏 Calibração:</strong> " + String(config.gramsPerRotation, 1) + "g por rotação</p>";
   html += "<p><strong>📶 WiFi:</strong> " + String(WiFi.status() == WL_CONNECTED ? "🟢 Conectado" : "🔴 Desconectado") + "</p>";
@@ -925,7 +989,7 @@ void handleReverse() {
     
     while (stepsToReverse > 0) {
       int chunk = min(stepsToReverse, STEPS_PER_CHUNK);
-      stepperMotor.step(-chunk);
+      stepMotorMultiple(chunk, false); // false = anti-horário
       stepsToReverse -= chunk;
       stepsReversed += chunk;
       
@@ -933,9 +997,9 @@ void handleReverse() {
       if (stepsReversed >= (REVERSE_INTERVAL_GRAMS / config.gramsPerRotation) * STEPS_PER_AUGER_ROTATION) {
         // Pequena pausa e movimento de liberação
         delay(50);
-        stepperMotor.step(REVERSE_STEPS/2); // Movimento pequeno para frente
+        stepMotorMultiple(REVERSE_STEPS/2, true); // Movimento pequeno para frente
         delay(50);
-        stepperMotor.step(-REVERSE_STEPS/2); // Volta
+        stepMotorMultiple(REVERSE_STEPS/2, false); // Volta
         stepsReversed = 0; // Reset contador
       }
       
@@ -946,7 +1010,7 @@ void handleReverse() {
     
     // Reversão final para garantir que pare completamente
     delay(100);
-    stepperMotor.step(-FINAL_REVERSE_STEPS/2); // Reversão final proporcional
+    stepMotorMultiple(FINAL_REVERSE_STEPS/2, false); // Reversão final proporcional
     delay(100);
     
     isStepperMoving = false;
@@ -1024,7 +1088,7 @@ void handleConfig() {
   html += ".form-row label { font-weight: 600; color: #555; min-width: 120px; }";
   html += "input, select { padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; transition: all 0.3s ease; background: white; }";
   html += "input:focus, select:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 3px rgba(76,175,80,0.1); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none; cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); }";
+  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); }";
   html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
   html += ".schedule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 20px 0; }";
   html += ".schedule-item { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); border-left: 4px solid #4CAF50; }";
@@ -1059,7 +1123,7 @@ void handleConfig() {
   html += "<div class='stat-card'>";
   html += "<h2>📊 Estatísticas de Uso</h2>";
   html += "<p><strong>🍽️ Total de Alimentações:</strong> " + String(totalFeedings) + "</p>";
-  html += "<p><strong>⚖️ Total Dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
+  html += "<p><strong>📦 Total Dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
   html += "<p><strong>🕐 Tempo Online:</strong> " + String(millis()/1000/60) + " minutos</p>";
   html += "<p><strong>💾 Memória Livre:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
   html += "</div>";
@@ -1159,18 +1223,18 @@ void handleCalibrate() {
   html += ".container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
   html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
   html += "h2 { color: #555; margin: 30px 0 15px 0; font-size: 1.5em; font-weight: 500; border-bottom: 2px solid #eee; padding-bottom: 10px; }";
-  html += ".current-calibration { background: linear-gradient(135deg, #fff3e0, #ffe0b2); padding: 20px; border-radius: 15px; margin: 20px 0; text-align: center; border-left: 5px solid #ff9800; box-shadow: 0 5px 15px rgba(255,152,0,0.1); }";
+  html += ".current-calibration { background: linear-gradient(135deg, #fff3e0, #ffe0b2); padding: 20px; border-radius: 15px; margin: 20px 0; text-align: center; font-size: 1.2em; box-shadow: 0 5px 15px rgba(255,152,0,0.1); }";
   html += ".instructions { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 25px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #2196F3; }";
   html += ".instructions ol { margin: 0; padding-left: 20px; line-height: 1.8; }";
   html += ".instructions li { margin: 8px 0; font-size: 1.1em; }";
   html += ".form-section { background: linear-gradient(145deg, #e8f5e8, #c8e6c9); padding: 25px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #4CAF50; }";
-  html += ".form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }";
+  html += ".form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }";
   html += ".form-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }";
   html += ".form-row { margin: 15px 0; }";
   html += ".form-row label { display: block; font-weight: 600; color: #555; margin-bottom: 8px; }";
   html += "input { padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; width: 100%; transition: all 0.3s ease; background: white; }";
   html += "input:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 3px rgba(76,175,80,0.1); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none; cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); width: 100%; text-align: center; }";
+  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 14px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); width: 100%; text-align: center; }";
   html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); background: linear-gradient(135deg, #45a049, #4CAF50); }";
   html += ".btn-secondary { background: linear-gradient(135deg, #2196F3, #1976D2); box-shadow: 0 6px 20px rgba(33,150,243,0.3); }";
   html += ".btn-secondary:hover { background: linear-gradient(135deg, #1976D2, #2196F3); box-shadow: 0 8px 25px rgba(33,150,243,0.4); }";
@@ -1325,14 +1389,14 @@ void handleReset() {
   html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
   html += ".container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.15); }";
   html += "h1 { color: #333; text-align: center; margin-bottom: 20px; font-size: 2.5em; font-weight: 300; }";
-  html += ".warning-box { background: linear-gradient(135deg, #fff3e0, #ffe0b2); padding: 20px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #ff9800; text-align: center; }";
-  html += ".option-card { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }";
-  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 16px 25px; margin: 10px 5px; border: none; cursor: pointer; border-radius: 25px; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); text-align: center; width: 100%; }";
+  html += ".warning-box { background: linear-gradient(135deg, #ffe6e6, #ffcccc); padding: 20px; border-radius: 15px; margin: 20px 0; border-left: 5px solid #ff9999; text-align: center; }";
+  html += ".option-card { background: linear-gradient(145deg, #f8f9fa, #e9ecef); padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow:  0 5px 15px rgba(0,0,0,0.08); }";
+  html += ".btn { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 16px 25px; margin: 10px 5px; border: none, cursor: pointer; border-radius: 25px; text-decoration: none, display: inline-block; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(76,175,80,0.3); text-align: center; width: 100%; }";
   html += ".btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(76,175,80,0.4); }";
   html += ".btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); box-shadow: 0 6px 20px rgba(244,67,54,0.3); }";
-  html += ".btn-danger:hover { box-shadow: 0 8px 25px rgba(244,67,54,0.4); }";
+  html += ".btn-danger:hover { box-shadow: 0 8px 25px rgba(244,67,54,0.4); background: linear-gradient(135deg, #d32f2f, #f44336); }";
   html += ".btn-warning { background: linear-gradient(135deg, #ff9800, #f57c00); box-shadow: 0 6px 20px rgba(255,152,0,0.3); }";
-  html += ".btn-warning:hover { box-shadow: 0 8px 25px rgba(255,152,0,0.4); }";
+  html += ".btn-warning:hover { box-shadow: 0 8px 25px rgba(255,152,0,0.4); background: linear-gradient(135deg, #f57c00, #ff9800); }";
   html += ".back-link { display: inline-block; margin-top: 25px; color: #666; text-decoration: none; font-weight: 500; padding: 10px 20px; border-radius: 25px; transition: all 0.3s ease; background: #f5f5f5; text-align: center; }";
   html += ".back-link:hover { color: #4CAF50; background: #e8f5e8; }";
   html += ".stats-info { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 5px solid #2196F3; }";
@@ -1356,7 +1420,7 @@ void handleReset() {
     html += "<h2>📊 Resetar Apenas Estatísticas</h2>";
     html += "<div class='stats-info'>";
     html += "<p><strong>📈 Total de alimentações:</strong> " + String(totalFeedings) + "</p>";
-    html += "<p><strong>⚖️ Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
+    html += "<p><strong>📦 Total dispensado:</strong> " + String(totalGramsDispensed, 1) + "g</p>";
     html += "<p><strong>🔄 Total de rotações:</strong> " + String(totalRotations) + "</p>";
     html += "</div>";
     html += "<p><em>Zera os contadores de alimentações, gramas dispensadas e rotações. Mantém todas as configurações, calibrações e horários.</em></p>";
@@ -1647,65 +1711,76 @@ void handleSetSchedule() {
   }
 }
 
-void handleResetSystem() {
-  if (!feedingInProgress) {
-    logEvent("SYSTEM_RESET", "Reset completo solicitado via web");
-    server.send(200, "text/plain", "Sistema sera reiniciado em 3 segundos...");
-    delay(3000);
-    ESP.restart();
-  } else {
-    server.send(423, "text/plain", "Nao e possivel reiniciar durante alimentacao");
-  }
+// Função para calcular delay entre passos baseado na velocidade configurada
+unsigned long calculateStepDelay() {
+  // Converte RPM para microssegundos entre passos
+  // RPM -> RPS -> passos por segundo -> microssegundos por passo
+  float stepsPerSecond = (config.motorSpeed / 60.0) * TOTAL_STEPS_PER_REVOLUTION;
+  unsigned long delayUs = (unsigned long)(1000000.0 / stepsPerSecond);
+  
+  // Limita delay mínimo para garantir funcionamento do A4988 em full step
+  if (delayUs < 1000) delayUs = 1000; // Mínimo 1ms para full step
+  if (delayUs > 20000) delayUs = 20000; // Máximo 20ms
+  
+  return delayUs;
 }
 
-// Funções de configuração e EEPROM
+// Função para calcular checksum da configuração
 uint16_t calculateChecksum(SystemConfig* cfg) {
   uint16_t checksum = 0;
-  uint8_t* data = (uint8_t*)cfg;
-  for (int i = 0; i < sizeof(SystemConfig) - sizeof(uint16_t); i++) {
-    checksum += data[i];
+  uint8_t* ptr = (uint8_t*)cfg;
+  
+  // Calcula checksum de todos os bytes exceto o próprio checksum
+  for (int i = 0; i < sizeof(SystemConfig) - sizeof(cfg->checksum); i++) {
+    checksum += ptr[i];
   }
+  
   return checksum;
 }
 
+// Função para salvar configuração na EEPROM
 void saveConfig() {
-  config.totalFeedings = totalFeedings;
-  config.totalRotations = totalRotations;
   config.checksum = calculateChecksum(&config);
   
   EEPROM.put(CONFIG_ADDRESS, config);
   EEPROM.commit();
-  Serial.println("Configuração salva na EEPROM");
+  
+  logEvent("CONFIG_SAVED", "Configuração salva na EEPROM");
 }
 
+// Função para carregar configuração da EEPROM
 void loadConfig() {
-  EEPROM.get(CONFIG_ADDRESS, config);
+  SystemConfig tempConfig;
+  EEPROM.get(CONFIG_ADDRESS, tempConfig);
   
-  if (config.configured && config.checksum == calculateChecksum(&config)) {
+  // Verifica se a configuração é válida
+  if (tempConfig.configured && tempConfig.checksum == calculateChecksum(&tempConfig)) {
+    config = tempConfig;
     totalFeedings = config.totalFeedings;
     totalRotations = config.totalRotations;
-    Serial.println("Configuração carregada da EEPROM");
+    logEvent("CONFIG_LOADED", "Configuração carregada da EEPROM");
   } else {
     // Configuração padrão
     initDefaultConfig();
     saveConfig();
-    Serial.println("Configuração padrão criada");
+    logEvent("CONFIG_DEFAULT", "Configuração padrão criada");
   }
 }
 
+// Função para configuração padrão
 void initDefaultConfig() {
   // Configuração padrão: 300g por dia dividido em 3 períodos
   config.dailyGramsTotal = 300;
   config.periodsPerDay = 3;
   config.autoDistribute = true;
-  config.gramsPerRotation = 10.0; // Valor inicial - precisa calibrar
+  config.gramsPerRotation = 15.0; // Valor inicial para NEMA 17 - precisa calibrar
   
   // Distribui automaticamente os horários
   distributeFeedings();
   
   strcpy(config.ssid, defaultSSID);
   strcpy(config.password, defaultPassword);
-  config.motorSpeed = 12;
+  config.motorSpeed = 100; // RPM para NEMA 17 (mais rápido que 28BYJ-48)
   config.configured = true;
   config.totalFeedings = 0;
   config.totalRotations = 0;
@@ -1738,13 +1813,33 @@ void distributeFeedings() {
   }
 }
 
-// Função para calcular rotações necessárias para determinada quantidade de gramas
-int calculateRotationsForGrams(int grams) {
-  if (config.gramsPerRotation <= 0) return 1; // Proteção
-  return max(1, (int)round((float)grams / config.gramsPerRotation));
+// Função para calcular quantos PASSOS são necessárias para dispensar X gramas (permite frações)
+int calculateStepsForGrams(float grams) {
+  if (config.gramsPerRotation <= 0) return TOTAL_STEPS_PER_REVOLUTION; // Proteção
+  
+  float stepsPerGram = TOTAL_STEPS_PER_REVOLUTION / config.gramsPerRotation;
+  int steps = (int)round(grams * stepsPerGram);
+  
+  return steps > 0 ? steps : 1;
 }
 
-// Função para calcular gramas que serão dispensadas com determinado número de rotações
+// Função para calcular quantos gramas serão dispensados com X passos
+float calculateGramsForSteps(int steps) {
+  if (config.gramsPerRotation <= 0) return 0;
+  
+  float gramsPerStep = config.gramsPerRotation / TOTAL_STEPS_PER_REVOLUTION;
+  return steps * gramsPerStep;
+}
+
+// FUNÇÕES ANTIGAS (mantidas para compatibilidade)
+// Função para calcular quantas rotações são necessárias para dispensar X gramas
+int calculateRotationsForGrams(int grams) {
+  if (config.gramsPerRotation <= 0) return 1; // Proteção
+  int rotations = (int)ceil((float)grams / config.gramsPerRotation);
+  return rotations > 0 ? rotations : 1;
+}
+
+// Função para calcular quantos gramas serão dispensados com X rotações
 float calculateGramsForRotations(int rotations) {
   return rotations * config.gramsPerRotation;
 }
@@ -1754,14 +1849,117 @@ void performAntiJamReverse() {
   logEvent("ANTI_JAM_REVERSE", String("Reversão em " + String(gramsDispensedCurrent, 1) + "g para evitar travamento").c_str());
   
   // Executa reversão pequena
-  stepperMotor.step(-REVERSE_STEPS);
+  stepMotorMultiple(REVERSE_STEPS, false); // false = anti-horário
   delay(100); // Pequena pausa
   
   // Volta à posição original
-  stepperMotor.step(REVERSE_STEPS);
+  stepMotorMultiple(REVERSE_STEPS, true); // true = horário
   delay(100);
   
   // Processa requisições web
   server.handleClient();
   yield();
+}
+
+// Função para resetar o sistema completamente
+void handleResetSystem() {
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+  html += "<title>Reset do Sistema</title>";
+  html += "<style>body{font-family:Arial;margin:20px;background:#f0f0f0;}";
+  html += ".container{background:white;padding:20px;border-radius:8px;max-width:500px;margin:0 auto;}";
+  html += ".warning{background:#ffe6e6;border:1px solid #ff9999;padding:15px;border-radius:5px;margin:15px 0;}";
+  html += ".button{background:#dc3545;color:white;padding:10px 20px;border:none;border-radius:5px;text-decoration:none;display:inline-block;margin:5px;}";
+  html += ".button:hover{background:#c82333;}";
+  html += ".button.safe{background:#28a745;} .button.safe:hover{background:#218838;}";
+  html += "</style></head><body>";
+  html += "<div class='container'>";
+  html += "<h2>⚠️ Reset do Sistema</h2>";
+  html += "<div class='warning'>";
+  html += "<strong>ATENÇÃO:</strong> Esta ação irá:<br>";
+  html += "• Resetar todas as configurações para padrão<br>";
+  html += "• Apagar estatísticas de alimentação<br>";
+  html += "• Reiniciar o dispositivo<br>";
+  html += "• Perder todas as calibrações<br>";
+  html += "</div>";
+  html += "<p>Tem certeza que deseja continuar?</p>";
+  html += "<a href='/confirm_reset' class='button'>SIM - Resetar Tudo</a>";
+  html += "<a href='/' class='button safe'>NÃO - Voltar</a>";
+  html += "</div></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+// Função para confirmar e executar o reset completo
+void handleConfirmReset() {
+  // Apaga toda a EEPROM
+  for (int i = 0; i < EEPROM_SIZE; i++) {
+    EEPROM.write(i, 0);
+  }
+  EEPROM.commit();
+  
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+  html += "<title>Sistema Resetado</title>";
+  html += "<style>body{font-family:Arial;margin:20px;background:#f0f0f0;text-align:center;}";
+  html += ".container{background:white;padding:20px;border-radius:8px;max-width:400px;margin:0 auto;}";
+  html += ".success{background:#e6ffe6;border:1px solid #99ff99;padding:15px;border-radius:5px;margin:15px 0;}";
+  html += "</style></head><body>";
+  html += "<div class='container'>";
+  html += "<h2>✅ Sistema Resetado</h2>";
+  html += "<div class='success'>";
+  html += "O sistema foi resetado com sucesso!<br>";
+  html += "O dispositivo será reiniciado em 3 segundos...";
+  html += "</div>";
+  html += "<script>setTimeout(function(){window.location.href='/';}, 3000);</script>";
+  html += "</div></body></html>";
+  
+  server.send(200, "text/html", html);
+  
+  logEvent("SYSTEM_RESET", "Sistema resetado pelo usuário via web");
+  delay(2000);
+  ESP.restart(); // Reinicia o ESP8266
+}
+
+// Função para configurar microstepping via software (OPCIONAL)
+// Use apenas se conectar MS1, MS2, MS3 aos pinos do ESP8266
+void setMicrostepping(int mode) {
+  /*
+  // Descomente se conectar os pinos MS
+  #ifdef MS1_PIN
+    pinMode(MS1_PIN, OUTPUT);
+    pinMode(MS2_PIN, OUTPUT);
+    pinMode(MS3_PIN, OUTPUT);
+    
+    switch(mode) {
+      case 1:  // Full step
+        digitalWrite(MS1_PIN, LOW);
+        digitalWrite(MS2_PIN, LOW);
+        digitalWrite(MS3_PIN, LOW);
+        break;
+      case 2:  // Half step
+        digitalWrite(MS1_PIN, HIGH);
+        digitalWrite(MS2_PIN, LOW);
+        digitalWrite(MS3_PIN, LOW);
+        break;
+      case 4:  // Quarter step
+        digitalWrite(MS1_PIN, LOW);
+        digitalWrite(MS2_PIN, HIGH);
+        digitalWrite(MS3_PIN, LOW);
+        break;
+      case 8:  // Eighth step
+        digitalWrite(MS1_PIN, HIGH);
+        digitalWrite(MS2_PIN, HIGH);
+        digitalWrite(MS3_PIN, LOW);
+        break;
+      case 16: // Sixteenth step
+        digitalWrite(MS1_PIN, HIGH);
+        digitalWrite(MS2_PIN, HIGH);
+        digitalWrite(MS3_PIN, HIGH);
+        break;
+    }
+    logEvent("MICROSTEPPING", String("Configurado para " + String(mode) + " step").c_str());
+  #endif
+  */
+  
+  // Por enquanto, apenas log informativo
+  logEvent("MICROSTEPPING", "Conecte MS1,MS2,MS3 ao GND para full step");
 }
